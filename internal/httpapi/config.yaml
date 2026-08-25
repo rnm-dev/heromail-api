@@ -1,0 +1,15 @@
+# oapi-codegen configuration. Regenerate with:
+#   docker compose exec backend go generate ./internal/httpapi/...
+package: httpapi
+output: internal/httpapi/gen.go
+generate:
+  models: true
+  # strict-server wraps the raw handlers so each operation takes a typed request
+  # and returns a typed response. That is where the enforcement lives: a
+  # response shape the spec does not declare will not compile.
+  std-http-server: true
+  strict-server: true
+  embedded-spec: true
+output-options:
+  # Keep the generated surface small and predictable.
+  skip-prune: false

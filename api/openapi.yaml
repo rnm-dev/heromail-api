@@ -1,0 +1,1000 @@
+openapi: 3.0.3
+
+info:
+  title: Heromail API
+  version: 0.1.0
+  description: |
+    Corporate mail service.
+
+    This document is the source of truth for the HTTP contract. The Go server
+    interface is generated from it, so an endpoint declared here that nobody
+    implements fails to compile — the spec cannot quietly drift from the code.
+
+    Two independent bearer credentials exist, and they are not interchangeable:
+
+    * **session** — a signed-in person, issued by `/auth/login`. Guards `/auth/me`,
+      `/auth/logout` and everything under `/workspaces`.
+    * **apiKey** — a machine acting for one workspace, `hm_live_…`. Guards `/v1/*`.
+
+servers:
+  - url: https://api-dev-heromail.rnm.dev
+    description: dev
+  - url: http://localhost:8060
+    description: local
+
+tags:
+  - name: health
+  - name: auth
+    description: Human authentication.
+  - name: workspaces
+    description: Tenants. Reached with a session, not an API key.
+  - name: emails
+    description: Sending. Reached with a workspace API key.
+
+security: []
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      operationId: getHealth
+      summary: Liveness and database reachability
+      security: []
+      responses:
+        '200':
+          description: Everything is reachable
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+        '503':
+          description: A dependency is unreachable
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+
+  /auth/register:
+    post:
+      tags: [auth]
+      operationId: register
+      summary: Create an account and start a session
+      description: |
+        Signs the user in immediately and sends a verification link in the
+        background. The address is not verified yet; see `user.email_verified`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Credentials' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409':
+          description: The address is already registered
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Exchange credentials for a session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Signed in
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Credentials' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: |
+            Wrong password or unknown address — deliberately indistinguishable,
+            so the endpoint cannot be used to discover which addresses exist.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/verify-email:
+    post:
+      tags: [auth]
+      operationId: verifyEmail
+      summary: Consume an emailed verification link
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerifyEmailRequest' }
+      responses:
+        '200':
+          description: Address verified
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserEnvelope' }
+        '400':
+          description: The token is unknown, expired or already used
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /auth/resend-verification:
+    post:
+      tags: [auth]
+      operationId: resendVerification
+      summary: Send a fresh verification link
+      description: |
+        Always answers 202, whether or not the address is registered. Any other
+        behaviour would be an account-enumeration oracle. Issuing a new link
+        invalidates the previous one.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResendVerificationRequest' }
+      responses:
+        '202':
+          description: Accepted, whether or not anything was sent
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/forgot-password:
+    post:
+      tags: [auth]
+      operationId: forgotPassword
+      summary: Send a password reset link
+      description: |
+        Always answers 202, whether or not the address is registered — any other
+        behaviour would be an account-enumeration oracle. Issuing a new link
+        invalidates the previous one.
+
+        Accounts that sign in only through SSO have no password to reset and
+        receive nothing.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ForgotPasswordRequest' }
+      responses:
+        '202':
+          description: Accepted, whether or not anything was sent
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/reset-password:
+    post:
+      tags: [auth]
+      operationId: resetPassword
+      summary: Set a new password from a reset link
+      description: |
+        Consumes the emailed token, sets the new password, and **revokes every
+        existing session** — a reset is what someone does when they believe the
+        account is compromised, so leaving the attacker's session alive would
+        defeat it.
+
+        Reading the link also proves control of the address, so the account's
+        email is marked verified if it was not already.
+
+        The response is a fresh session for the browser that performed the
+        reset, in the same shape as login.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResetPasswordRequest' }
+      responses:
+        '200':
+          description: Password changed; every other session is gone
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Credentials' }
+        '400':
+          description: The token is unknown, expired or already used, or the password is too weak
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /auth/me:
+    get:
+      tags: [auth]
+      operationId: getCurrentUser
+      summary: The user behind the current session
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: The signed-in user
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Revoke the current session
+      security: [{ session: [] }]
+      responses:
+        '204':
+          description: Session revoked
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /workspaces:
+    get:
+      tags: [workspaces]
+      operationId: listWorkspaces
+      summary: Workspaces the signed-in user belongs to
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: The user's workspaces, with their role in each
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [workspaces]
+      operationId: createWorkspace
+      summary: Create a workspace
+      description: The creator becomes its owner.
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateWorkspaceRequest' }
+      responses:
+        '201':
+          description: Workspace created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Workspace' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: The slug is taken
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /workspaces/{slug}:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Slug' }
+    get:
+      tags: [workspaces]
+      operationId: getWorkspace
+      summary: One workspace by slug
+      description: |
+        A workspace the user does not belong to is reported as absent, so
+        membership cannot be probed by slug.
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: The workspace
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Workspace' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{slug}/domains:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Slug' }
+    get:
+      tags: [domains]
+      operationId: listDomains
+      summary: Mail domains owned by the workspace
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: The workspace's domains
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DomainList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [domains]
+      operationId: addDomain
+      summary: Claim a domain
+      description: |
+        Records the claim and returns the DNS records to publish. The domain is
+        not usable until verified. Domains are globally unique: a domain
+        already claimed by another workspace is refused.
+
+        Requires the `admin` role or above.
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddDomainRequest' }
+      responses:
+        '201':
+          description: Claimed, pending verification
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Domain' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The domain is already claimed, here or by another workspace
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /workspaces/{slug}/domains/{domain}:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Slug' }
+      - name: domain
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/DomainName' }
+    get:
+      tags: [domains]
+      operationId: getDomain
+      summary: One domain
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: The domain
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Domain' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [domains]
+      operationId: updateDomain
+      summary: Make a domain the workspace default
+      description: |
+        Only a verified domain may become primary, and a workspace has at most
+        one. Requires the `admin` role or above.
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateDomainRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Domain' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [domains]
+      operationId: deleteDomain
+      summary: Release a domain
+      description: Requires the `admin` role or above.
+      security: [{ session: [] }]
+      responses:
+        '204':
+          description: Released
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{slug}/domains/{domain}/verify:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Slug' }
+      - name: domain
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/DomainName' }
+    post:
+      tags: [domains]
+      operationId: verifyDomain
+      summary: Check the DNS challenge now
+      description: |
+        Resolves the challenge TXT record and, on a match, marks the domain
+        verified. A failure is not an error: the domain comes back with
+        `last_error` describing what was found, which is what the UI shows.
+
+        Requires the `admin` role or above.
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: The check ran; inspect `verified` and `last_error`
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Domain' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{slug}/domains/{domain}/dkim/rotate:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Slug' }
+      - name: domain
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/DomainName' }
+    post:
+      tags: [domains]
+      operationId: rotateDkimKey
+      summary: Mint a replacement DKIM key
+      description: |
+        Creates a new key in the **pending** state and returns the domain with
+        its record added to `dns_records`. Signing does not switch yet: publish
+        the new record, then call verify, which promotes the pending key and
+        retires the one that was signing.
+
+        Two steps on purpose — switching signer before DNS propagates makes
+        every message sent in the gap fail DKIM. The retired key stays listed
+        so the customer knows not to delete its record yet.
+
+        Requires the `admin` role or above.
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: A pending key was created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Domain' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/workspace:
+    get:
+      tags: [emails]
+      operationId: getApiKeyWorkspace
+      summary: The workspace the API key belongs to
+      security: [{ apiKey: [] }]
+      responses:
+        '200':
+          description: The workspace
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Workspace' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /messages/search:
+    get:
+      tags: [emails]
+      operationId: searchMessages
+      summary: Search messages visible to the signed-in user
+      description: Searches stored outbound messages across all workspaces the user belongs to.
+      security: [{ session: [] }]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 200 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: Matching messages, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [messages]
+                properties:
+                  messages:
+                    type: array
+                    items: { $ref: '#/components/schemas/Email' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/emails:
+    post:
+      tags: [emails]
+      operationId: sendEmail
+      summary: Queue a message for sending
+      description: |
+        **Asynchronous.** The message is recorded and handed to the queue; the
+        request does not wait for the mail transport. Poll `GET /v1/emails/{id}`
+        for the outcome, or read the event trail.
+
+        This is why there is no `502` here any more: at the time we answer,
+        nobody has talked to a mail server yet. A transport failure surfaces as
+        `status: failed` on the message, and the worker retries with backoff
+        until it gives up and marks it `dead`.
+      security: [{ apiKey: [] }]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: |
+            Scoped to the workspace. Repeating a request with the same key
+            returns the original message and does not send again. Omitting it
+            means no deduplication at all.
+          schema: { type: string, maxLength: 255 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendEmailRequest' }
+      responses:
+        '202':
+          description: |
+            Queued. For a repeated idempotency key this returns the original
+            message unchanged, whatever state it has reached by now.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SendEmailResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /v1/attachments:
+    post:
+      tags: [emails]
+      operationId: uploadAttachment
+      summary: Upload a file to attach to a later message
+      description: |
+        Stores the file in object storage and returns an id. Reference that id
+        in `SendEmailRequest.attachments` to send it; an upload that is never
+        referenced is an orphan and goes nowhere.
+
+        `503` means the deployment has no bucket configured yet — attachments
+        are wired end to end before credentials exist, this is not a bug.
+      security: [{ apiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Stored
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Attachment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413':
+          description: The file, or the multipart body, is too large
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503':
+          description: Attachment storage is not configured on this deployment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /v1/emails/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [emails]
+      operationId: getEmail
+      summary: One message
+      description: |
+        Scoped to the API key's workspace. Another workspace's message is
+        reported as absent.
+      security: [{ apiKey: [] }]
+      responses:
+        '200':
+          description: The message
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Email' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    session:
+      type: http
+      scheme: bearer
+      description: Session token from `/auth/register` or `/auth/login`.
+    apiKey:
+      type: http
+      scheme: bearer
+      description: Workspace API key, `hm_live_…`, minted by the issue-api-key command.
+
+  responses:
+    BadRequest:
+      description: The request is malformed or fails validation
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Missing, malformed, expired or revoked credentials
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: No such resource within the caller's scope
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    TooManyRequests:
+      description: |
+        The caller is over a rate limit. `Retry-After` carries the number of
+        seconds until the window resets.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+          description: Seconds until the limit resets.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: |
+        Authenticated, but the caller's role in this workspace is too low.
+        Distinct from 404: the resource exists and they can see it, they just
+        may not change it.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      description: |
+        The single error envelope for the whole API. `/v1/*` used to return a
+        bare `{"error":"text"}`, which the frontend client could not read.
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Stable, machine-readable. Branch on this, not on the message.
+              example: validation_failed
+            message:
+              type: string
+              description: Human-readable, safe to show a user.
+            details:
+              description: Optional per-field or per-code extra context.
+
+    Health:
+      type: object
+      required: [status, database]
+      properties:
+        status: { type: string, enum: [ok, degraded] }
+        database: { type: string, enum: [ok, unreachable] }
+
+    Slug:
+      type: string
+      pattern: '^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$'
+      description: Lowercase tenant handle used in URLs.
+      example: acme
+
+    Role:
+      type: string
+      enum: [owner, admin, member]
+
+    User:
+      type: object
+      required: [id, email, name, email_verified, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string }
+        email_verified:
+          type: boolean
+          description: Derived from `email_verified_at`; the flag the UI wants.
+        email_verified_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    UserEnvelope:
+      type: object
+      required: [user]
+      properties:
+        user: { $ref: '#/components/schemas/User' }
+
+    Credentials:
+      type: object
+      required: [token, user, expiresAt]
+      properties:
+        token:
+          type: string
+          description: Session bearer token. Shown once; not recoverable.
+        user: { $ref: '#/components/schemas/User' }
+        expiresAt: { type: string, format: date-time }
+
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password:
+          type: string
+          minLength: 10
+          maxLength: 72
+          description: |
+            Length beats composition rules. The upper bound is bcrypt's — it
+            ignores anything past 72 bytes, so a longer password is refused
+            rather than half-stored.
+        name: { type: string, maxLength: 200 }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+
+    VerifyEmailRequest:
+      type: object
+      required: [token]
+      additionalProperties: false
+      properties:
+        token: { type: string }
+
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email }
+
+    ResetPasswordRequest:
+      type: object
+      required: [token, password]
+      additionalProperties: false
+      properties:
+        token: { type: string }
+        password:
+          type: string
+          minLength: 10
+          maxLength: 72
+          description: Same rules as registration.
+
+    ResendVerificationRequest:
+      type: object
+      required: [email]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email }
+
+    Workspace:
+      type: object
+      required: [id, slug, name, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { $ref: '#/components/schemas/Slug' }
+        name: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    WorkspaceMembership:
+      allOf:
+        - $ref: '#/components/schemas/Workspace'
+        - type: object
+          required: [role]
+          properties:
+            role: { $ref: '#/components/schemas/Role' }
+
+    WorkspaceList:
+      type: object
+      required: [workspaces]
+      properties:
+        workspaces:
+          type: array
+          items: { $ref: '#/components/schemas/WorkspaceMembership' }
+
+    CreateWorkspaceRequest:
+      type: object
+      required: [name, slug]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        slug: { $ref: '#/components/schemas/Slug' }
+
+    DomainName:
+      type: string
+      maxLength: 253
+      pattern: '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'
+      description: Lowercase FQDN. Stored normalised, so `ACME.com` and `acme.com` are one domain.
+      example: acme.com
+
+    DnsRecord:
+      type: object
+      required: [type, name, value, purpose]
+      description: A record the customer has to publish for the domain to work.
+      properties:
+        type: { type: string, example: TXT }
+        name: { type: string, example: _heromail-challenge.acme.com }
+        value: { type: string }
+        purpose:
+          type: string
+          enum: [ownership, spf, dkim, dmarc]
+        required:
+          type: boolean
+          description: |
+            False for records that are recommended rather than mandatory, and
+            for DKIM keys that have been retired but must stay published until
+            mail signed with them has been delivered.
+        status:
+          type: string
+          enum: [ok, missing, mismatch]
+          description: |
+            Only present after a check. Reads that did not resolve DNS leave it
+            unset rather than guessing.
+        found:
+          type: array
+          description: What actually resolved, so a mismatch can be shown side by side.
+          items: { type: string }
+
+    Domain:
+      type: object
+      required: [id, workspace_id, domain, is_primary, verified, dns_records, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        workspace_id: { type: string, format: uuid }
+        domain: { $ref: '#/components/schemas/DomainName' }
+        is_primary:
+          type: boolean
+          description: The default domain for new mailboxes. At most one per workspace, and only ever a verified one.
+        verified:
+          type: boolean
+          description: Derived from `verified_at`.
+        verified_at: { type: string, format: date-time, nullable: true }
+        last_checked_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the DNS challenge was last resolved.
+        last_error:
+          type: string
+          nullable: true
+          description: What the last check found, when it did not match.
+        dns_records:
+          type: array
+          description: |
+            Everything to publish: ownership, SPF, a DKIM record per key, and
+            DMARC. After a verify call each carries a `status`.
+          items: { $ref: '#/components/schemas/DnsRecord' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    DomainList:
+      type: object
+      required: [domains]
+      properties:
+        domains:
+          type: array
+          items: { $ref: '#/components/schemas/Domain' }
+
+    AddDomainRequest:
+      type: object
+      required: [domain]
+      additionalProperties: false
+      properties:
+        domain: { $ref: '#/components/schemas/DomainName' }
+
+    UpdateDomainRequest:
+      type: object
+      required: [is_primary]
+      additionalProperties: false
+      properties:
+        is_primary:
+          type: boolean
+          description: Only `true` is meaningful; a workspace always has a primary once one is set.
+
+    EmailStatus:
+      type: string
+      enum: [queued, processing, sent, failed, dead]
+      description: |
+        `sent` and `dead` are terminal. Delivery, bounces and complaints are
+        events that happen afterwards, not statuses.
+
+    SendEmailRequest:
+      type: object
+      required: [from, to]
+      additionalProperties: false
+      description: At least one of `html` or `text` must be present and non-blank.
+      properties:
+        from: { type: string, format: email }
+        to:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { type: string, format: email }
+        subject: { type: string, maxLength: 998 }
+        html: { type: string }
+        text: { type: string }
+        attachments:
+          type: array
+          maxItems: 20
+          items: { type: string, format: uuid }
+          description: |
+            Ids from `POST /v1/attachments`. Each must belong to this
+            workspace and not already be attached to another message; a
+            missing or already-used id fails the whole request.
+
+    Attachment:
+      type: object
+      required: [id, filename, content_type, size_bytes, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        filename: { type: string }
+        content_type: { type: string }
+        size_bytes: { type: integer, format: int64 }
+        created_at: { type: string, format: date-time }
+
+    SendEmailResponse:
+      type: object
+      required: [id, status]
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/EmailStatus' }
+        error:
+          type: string
+          description: Present only when the transport refused the message.
+
+    Email:
+      type: object
+      required: [id, workspace_id, from, to, subject, status, attempts, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        workspace_id: { type: string, format: uuid }
+        from: { type: string, format: email }
+        to:
+          type: array
+          items: { type: string, format: email }
+        subject: { type: string }
+        html: { type: string, nullable: true }
+        text: { type: string, nullable: true }
+        status: { $ref: '#/components/schemas/EmailStatus' }
+        provider_message_id: { type: string, nullable: true }
+        idempotency_key: { type: string, nullable: true }
+        attempts: { type: integer }
+        last_error: { type: string, nullable: true }
+        attachments:
+          type: array
+          items: { $ref: '#/components/schemas/Attachment' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }

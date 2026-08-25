@@ -1,0 +1,13 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "go build -o ./tmp/main ."
+bin = "./tmp/main"
+# .sql too: a new migration must restart the backend to be applied.
+include_ext = ["go", "sql"]
+exclude_dir = ["tmp"]
+delay = 300
+
+[misc]
+clean_on_exit = true
