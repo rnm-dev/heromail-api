@@ -24,10 +24,30 @@ func main() {
 	from := flag.String("from", "noreply@app-dev-heromail.rnm.dev", "envelope sender")
 	subject := flag.String("subject", "тест", "subject")
 	body := flag.String("body", "тест тест", "plain text body")
+	// DKIM is passed in as a file rather than read from the database: this
+	// command has to run on the sending host, which has no route to Postgres.
+	// Dump the key with cmd/dkimkey on a host that does.
+	dkimKey := flag.String("dkim-key", "", "path to a PKCS#8 DER private key; enables signing")
+	dkimSelector := flag.String("dkim-selector", "", "DKIM selector (the s= tag)")
+	dkimDomain := flag.String("dkim-domain", "", "DKIM signing domain (the d= tag)")
+	helo := flag.String("helo", "", "EHLO name; must be a FQDN matching this host's PTR")
 	flag.Parse()
 
 	if *to == "" {
 		log.Fatal("-to is required")
+	}
+
+	var dkim *provider.DKIM
+	if *dkimKey != "" {
+		if *dkimSelector == "" || *dkimDomain == "" {
+			log.Fatal("-dkim-key needs -dkim-selector and -dkim-domain")
+		}
+		der, err := os.ReadFile(*dkimKey)
+		if err != nil {
+			log.Fatalf("read DKIM key: %v", err)
+		}
+		dkim = &provider.DKIM{Domain: *dkimDomain, Selector: *dkimSelector, PrivateKeyDER: der}
+		fmt.Printf("Подписываю DKIM: d=%s s=%s\n", *dkimDomain, *dkimSelector)
 	}
 
 	domain := (*to)[indexAt(*to)+1:]
@@ -42,7 +62,9 @@ func main() {
 
 	// Port 25 and no TLS requirement: this is server-to-server delivery, not a
 	// submission relay.
-	sender, err := smtpprovider.New(smtpprovider.Config{Host: host, Port: 25, Timeout: 30 * time.Second})
+	sender, err := smtpprovider.New(smtpprovider.Config{
+		Host: host, Port: 25, Timeout: 30 * time.Second, HELO: *helo,
+	})
 	if err != nil {
 		log.Fatalf("build sender: %v", err)
 	}
@@ -52,6 +74,7 @@ func main() {
 
 	id, err := sender.Send(ctx, provider.Message{
 		From: *from, To: []string{*to}, Subject: *subject, TextBody: *body,
+		DKIM: dkim,
 	})
 	if err != nil {
 		fmt.Printf("\nОТКАЗ: %v\n", err)
