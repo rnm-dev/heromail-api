@@ -29,6 +29,10 @@ type Sender struct {
 	// tls controls whether STARTTLS is required, attempted, or skipped. Dev
 	// runs against Mailpit, which speaks plaintext.
 	tls mail.TLSPolicy
+
+	// helo is the name we greet the receiving server with. Empty means
+	// go-mail's default, os.Hostname().
+	helo string
 }
 
 // Config is the knob set for New.
@@ -41,6 +45,14 @@ type Config struct {
 	// RequireTLS demands STARTTLS and fails if the server does not offer it.
 	// Leave false for local Mailpit; set it for any real relay.
 	RequireTLS bool
+
+	// HELO is the name announced in the EHLO greeting. It must be a FQDN that
+	// resolves to the sending IP, and it should match that IP's PTR — receivers
+	// check all three agree, and a bare hostname like "nid-01" (go-mail's
+	// default, from os.Hostname) fails every one of those checks.
+	//
+	// Empty is fine for Mailpit, which does not care.
+	HELO string
 }
 
 func New(cfg Config) (*Sender, error) {
@@ -66,6 +78,7 @@ func New(cfg Config) (*Sender, error) {
 		password: cfg.Password,
 		timeout:  cfg.Timeout,
 		tls:      policy,
+		helo:     strings.TrimSpace(cfg.HELO),
 	}, nil
 }
 
@@ -88,6 +101,7 @@ func NewFromEnv() (*Sender, error) {
 		Username:   os.Getenv("SMTP_USERNAME"),
 		Password:   os.Getenv("SMTP_PASSWORD"),
 		RequireTLS: os.Getenv("SMTP_REQUIRE_TLS") == "1",
+		HELO:       os.Getenv("SMTP_HELO"),
 	})
 }
 
@@ -163,6 +177,9 @@ func (s *Sender) Send(ctx context.Context, msg provider.Message) (string, error)
 		mail.WithPort(s.port),
 		mail.WithTLSPolicy(s.tls),
 		mail.WithTimeout(s.timeout),
+	}
+	if s.helo != "" {
+		opts = append(opts, mail.WithHELO(s.helo))
 	}
 	if s.username != "" {
 		opts = append(opts,

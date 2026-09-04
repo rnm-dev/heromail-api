@@ -18,6 +18,14 @@ type fakeSMTP struct {
 
 	mu       sync.Mutex
 	envelope []envelope
+	helo     string
+}
+
+// lastHELO returns the name the client announced in its EHLO greeting.
+func (s *fakeSMTP) lastHELO() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.helo
 }
 
 type envelope struct {
@@ -83,6 +91,12 @@ func (s *fakeSMTP) handle(conn net.Conn) {
 
 		switch {
 		case strings.HasPrefix(upper, "EHLO"):
+			// Recorded so a test can assert on the name we announce: receivers
+			// check it against the sending IP's PTR, so it is part of the
+			// contract, not just a formality.
+			s.mu.Lock()
+			s.helo = strings.TrimSpace(cmd[len("EHLO"):])
+			s.mu.Unlock()
 			// No STARTTLS, no AUTH: the client must fall back to plaintext.
 			reply("250-fake greets you")
 			reply("250 SIZE 35882577")

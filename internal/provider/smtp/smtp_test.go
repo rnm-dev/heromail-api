@@ -176,6 +176,44 @@ func TestSendRejectsAnUnparseableDKIMKey(t *testing.T) {
 	}
 }
 
+// The EHLO name is checked by receivers against the sending IP's PTR. Sending
+// go-mail's default (os.Hostname(), e.g. "nid-01") announces a name that is not
+// a FQDN, does not resolve, and cannot match a PTR — Gmail marks that down.
+func TestSendAnnouncesTheConfiguredHELO(t *testing.T) {
+	fake := startFakeSMTP(t)
+	host, port := fake.addr()
+	s, err := New(Config{Host: host, Port: port, Timeout: 5 * time.Second, HELO: "mail.acme.com"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if _, err := s.Send(context.Background(), provider.Message{
+		From: "noreply@acme.com", To: []string{"viktor@acme.com"}, TextBody: "hi",
+	}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	if got := fake.lastHELO(); got != "mail.acme.com" {
+		t.Errorf("EHLO name = %q, want mail.acme.com", got)
+	}
+}
+
+func TestSendWithoutHELOFallsBackToTheHostname(t *testing.T) {
+	s, fake := newTestSender(t)
+
+	if _, err := s.Send(context.Background(), provider.Message{
+		From: "noreply@acme.com", To: []string{"viktor@acme.com"}, TextBody: "hi",
+	}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	// Not asserting the value — it is whatever the machine is called. Only
+	// that we still greet, so an unset HELO degrades rather than breaks.
+	if fake.lastHELO() == "" {
+		t.Error("no EHLO name was sent at all")
+	}
+}
+
 func TestSendRejectsInvalidMessages(t *testing.T) {
 	s, fake := newTestSender(t)
 
