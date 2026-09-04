@@ -18,14 +18,33 @@ var (
 	ErrValidation   = errors.New("validation failed")
 	ErrCredentials  = errors.New("invalid email or password")
 	ErrInvalidToken = errors.New("invalid or expired token")
+	// ErrCodeLocked means too many wrong codes were entered and the code is
+	// refused for a while — including the right one.
+	ErrCodeLocked = errors.New("too many attempts")
 )
 
 const (
-	sessionTTL      = 30 * 24 * time.Hour
-	verificationTTL = 24 * time.Hour
+	sessionTTL = 30 * 24 * time.Hour
+
+	// A one-time code lives minutes, not hours. It is short enough to type
+	// straight out of an open inbox, and a window that stays open for a day
+	// would give a guesser a day of tries against 6 digits.
+	verificationTTL = 15 * time.Minute
+
 	// A reset link is a credential that takes over the account, so it lives far
 	// shorter than a verification link, which only confirms an address.
 	passwordResetTTL = time.Hour
+
+	// maxOTPAttempts caps guesses against one code. Seven is generous for
+	// someone copying digits out of an email and still leaves an attacker
+	// needing ~140k codes to expect one hit, against a code that dies in 15
+	// minutes anyway.
+	maxOTPAttempts = 7
+
+	// otpLockout is how long the code is refused once the cap is hit. Long
+	// enough that automated guessing is pointless, short enough that a person
+	// who fat-fingered it is not locked out of their own signup for the day.
+	otpLockout = 15 * time.Minute
 )
 
 // Config carries what the service needs from the environment.
@@ -188,19 +207,46 @@ func (s *Service) SignInWithIdentity(ctx context.Context, ext ExternalIdentity, 
 	return s.startSession(ctx, created, rc)
 }
 
-// VerifyEmail consumes a token and marks the address proven.
-func (s *Service) VerifyEmail(ctx context.Context, token string) (*User, error) {
-	userID, err := s.store.ConsumeToken(ctx, PurposeEmailVerification, hashToken(token))
+// VerifyEmail checks a one-time code and marks the address proven.
+//
+// Unlike a link, a code is presented alongside the address it belongs to: the
+// attempt has to be attributed to a specific account in order to be counted
+// against that account's budget.
+//
+// An unknown address and a wrong code are reported identically
+// (ErrInvalidToken). Saying "no pending code for this address" would turn the
+// endpoint into an account-enumeration oracle, which is the same reason
+// resend-verification answers 202 for everyone.
+func (s *Service) VerifyEmail(ctx context.Context, email, code string) (*User, error) {
+	user, err := s.store.UserByEmail(ctx, normaliseEmail(email))
 	if errors.Is(err, ErrNotFound) {
 		return nil, ErrInvalidToken
 	}
 	if err != nil {
 		return nil, err
 	}
-	if err := s.store.MarkEmailVerified(ctx, userID); err != nil {
+
+	res, err := s.store.ConsumeOTP(ctx, user.ID, PurposeEmailVerification,
+		hashOTP(user.ID, code), maxOTPAttempts, otpLockout)
+	if errors.Is(err, ErrNotFound) {
+		return nil, ErrInvalidToken
+	}
+	if err != nil {
 		return nil, err
 	}
-	return s.store.UserByID(ctx, userID)
+
+	switch {
+	case res.LockedUntil != nil:
+		return nil, fmt.Errorf("%w: try again in %s", ErrCodeLocked,
+			time.Until(*res.LockedUntil).Round(time.Minute))
+	case !res.OK:
+		return nil, fmt.Errorf("%w: %d attempts left", ErrInvalidToken, res.Remaining)
+	}
+
+	if err := s.store.MarkEmailVerified(ctx, user.ID); err != nil {
+		return nil, err
+	}
+	return s.store.UserByID(ctx, user.ID)
 }
 
 // ResendVerification re-sends the link. It reports success even for unknown
@@ -335,32 +381,38 @@ func (s *Service) startSession(ctx context.Context, user *User, rc RequestContex
 // sendVerificationEmail is best-effort: a mail outage must not prevent the
 // account from existing. The user can always ask for another link.
 func (s *Service) sendVerificationEmail(ctx context.Context, user *User) {
-	token, hash, err := newToken()
+	code, err := newOTP()
 	if err != nil {
-		log.Printf("account: generate verification token for %s: %v", user.ID, err)
+		log.Printf("account: generate verification code for %s: %v", user.ID, err)
 		return
 	}
-	if err := s.store.IssueToken(ctx, user.ID, PurposeEmailVerification, hash, verificationTTL); err != nil {
-		log.Printf("account: store verification token for %s: %v", user.ID, err)
+	// Issuing replaces any live code, so an earlier email stops working and
+	// its attempt counter goes with it. That is what keeps "request another
+	// code" from being a way to reset the budget on the *same* code while
+	// still letting a stuck user start over.
+	if err := s.store.IssueToken(ctx, user.ID, PurposeEmailVerification,
+		hashOTP(user.ID, code), verificationTTL); err != nil {
+		log.Printf("account: store verification code for %s: %v", user.ID, err)
 		return
 	}
 
-	link := fmt.Sprintf("%s/verify-email?token=%s",
-		strings.TrimRight(s.cfg.AppBaseURL, "/"), url.QueryEscape(token))
+	minutes := int(verificationTTL.Minutes())
 
 	_, err = s.sender.Send(ctx, provider.Message{
 		From:    s.cfg.MailFrom,
 		To:      []string{user.Email},
-		Subject: "Подтвердите адрес электронной почты",
+		Subject: "Код подтверждения: " + code,
 		TextBody: fmt.Sprintf(
-			"Здравствуйте!\n\nПодтвердите адрес, перейдя по ссылке:\n%s\n\n"+
-				"Ссылка действует 24 часа. Если вы не регистрировались, просто проигнорируйте это письмо.\n",
-			link),
+			"Здравствуйте!\n\nВаш код подтверждения: %s\n\n"+
+				"Код действует %d минут. Если вы не регистрировались, просто проигнорируйте это письмо "+
+				"— без кода никто не получит доступ к аккаунту.\n",
+			code, minutes),
 		HTMLBody: fmt.Sprintf(
-			`<p>Здравствуйте!</p><p>Подтвердите адрес, перейдя по ссылке:</p>`+
-				`<p><a href="%s">Подтвердить адрес</a></p>`+
-				`<p>Ссылка действует 24 часа. Если вы не регистрировались, просто проигнорируйте это письмо.</p>`,
-			link),
+			`<p>Здравствуйте!</p><p>Ваш код подтверждения:</p>`+
+				`<p style="font-size:28px;font-weight:700;letter-spacing:4px">%s</p>`+
+				`<p>Код действует %d минут. Если вы не регистрировались, просто проигнорируйте это письмо `+
+				`— без кода никто не получит доступ к аккаунту.</p>`,
+			code, minutes),
 	})
 	if err != nil {
 		log.Printf("account: send verification email to %s: %v", user.ID, err)

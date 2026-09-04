@@ -2,6 +2,7 @@ package account
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -260,6 +261,103 @@ func (s *Store) ConsumeToken(ctx context.Context, purpose TokenPurpose, hash []b
 		return "", ErrNotFound
 	}
 	return userID, err
+}
+
+// OTPResult says how a code attempt ended. The caller needs the distinction to
+// tell the user how many tries are left without leaking whether the code was
+// close, and to report a lockout as a lockout rather than a wrong code.
+type OTPResult struct {
+	OK          bool
+	Remaining   int
+	LockedUntil *time.Time
+}
+
+// ConsumeOTP checks a code and counts the attempt, in one transaction.
+//
+// It is deliberately not a lookup by digest, the way link tokens work: a wrong
+// guess produces a digest that matches nothing, and a guess that finds no row
+// cannot be counted. So the live row is located by (user, purpose), locked, and
+// the digest compared in memory.
+//
+// SELECT ... FOR UPDATE is what makes the cap real. Without it, seven parallel
+// requests all read attempts=0, all decide they are within budget, and the
+// counter records one failure instead of seven.
+func (s *Store) ConsumeOTP(
+	ctx context.Context, userID string, purpose TokenPurpose, hash []byte, maxAttempts int, lockFor time.Duration,
+) (OTPResult, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return OTPResult{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	var (
+		id          string
+		stored      []byte
+		attempts    int
+		lockedUntil *time.Time
+		expired     bool
+	)
+	err = tx.QueryRow(ctx, `
+		SELECT id, token_hash, attempts, locked_until, expires_at <= now()
+		FROM user_tokens
+		WHERE user_id = $1 AND purpose = $2 AND consumed_at IS NULL
+		FOR UPDATE`, userID, purpose).Scan(&id, &stored, &attempts, &lockedUntil, &expired)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return OTPResult{}, ErrNotFound
+	}
+	if err != nil {
+		return OTPResult{}, err
+	}
+
+	now := time.Now()
+	if lockedUntil != nil && lockedUntil.After(now) {
+		// Locked: a correct code is refused too. Otherwise the lock would tell
+		// an attacker precisely when they had guessed right.
+		return OTPResult{LockedUntil: lockedUntil}, nil
+	}
+	if lockedUntil != nil {
+		// The lock has passed. Give a fresh budget rather than leaving the
+		// counter at the cap, where a single wrong guess re-locks instantly.
+		attempts = 0
+	}
+	if expired {
+		return OTPResult{}, ErrNotFound
+	}
+
+	// Constant time: a byte-by-byte comparison that returns early leaks how
+	// much of the digest matched through timing.
+	if subtle.ConstantTimeCompare(stored, hash) == 1 {
+		if _, err := tx.Exec(ctx,
+			`UPDATE user_tokens SET consumed_at = now() WHERE id = $1`, id); err != nil {
+			return OTPResult{}, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return OTPResult{}, err
+		}
+		return OTPResult{OK: true}, nil
+	}
+
+	attempts++
+	var lock *time.Time
+	if attempts >= maxAttempts {
+		until := now.Add(lockFor)
+		lock = &until
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE user_tokens SET attempts = $2, locked_until = $3 WHERE id = $1`,
+		id, attempts, lock); err != nil {
+		return OTPResult{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return OTPResult{}, err
+	}
+
+	remaining := maxAttempts - attempts
+	if remaining < 0 {
+		remaining = 0
+	}
+	return OTPResult{Remaining: remaining, LockedUntil: lock}, nil
 }
 
 // ---------------------------------------------------------------- sessions

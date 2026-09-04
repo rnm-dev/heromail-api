@@ -188,20 +188,38 @@ func (s *Server) Login(ctx context.Context, request LoginRequestObject) (LoginRe
 }
 
 func (s *Server) VerifyEmail(ctx context.Context, request VerifyEmailRequestObject) (VerifyEmailResponseObject, error) {
-	if request.Body == nil || request.Body.Token == "" {
-		return VerifyEmail400JSONResponse(errorBody("validation_failed", "token is required")), nil
+	if request.Body == nil || request.Body.Code == "" || request.Body.Email == "" {
+		return VerifyEmail400JSONResponse(errorBody("validation_failed", "email and code are required")), nil
 	}
 
-	user, err := s.accounts.VerifyEmail(ctx, request.Body.Token)
+	// A coarse per-address limit on top of the per-code counter in Postgres.
+	// This one throttles someone burning through *fresh* codes; the row
+	// counter is what caps guesses against a single code, and it is the
+	// authoritative one because it does not fail open when Redis is down.
+	if res := s.allow(ctx, normaliseKey(string(request.Body.Email)), verifyAttemptPerEmail); !res.Allowed {
+		return VerifyEmail429JSONResponse{tooMany(res, "too many attempts, try again later")}, nil
+	}
+
+	user, err := s.accounts.VerifyEmail(ctx, string(request.Body.Email), request.Body.Code)
 	switch {
+	case errors.Is(err, account.ErrCodeLocked):
+		return VerifyEmail429JSONResponse{TooManyRequestsJSONResponse{
+			Body:    errorBody("code_locked", err.Error()),
+			Headers: TooManyRequestsResponseHeaders{RetryAfter: &otpLockoutSeconds},
+		}}, nil
 	case errors.Is(err, account.ErrInvalidToken):
-		return VerifyEmail400JSONResponse(errorBody("invalid_token", "this link is invalid or has expired")), nil
+		// Deliberately the same answer for a wrong code and for an address
+		// with nothing pending.
+		return VerifyEmail400JSONResponse(errorBody("invalid_code", err.Error())), nil
 	case err != nil:
 		log.Printf("verify-email: %v", err)
 		return nil, err
 	}
 	return VerifyEmail200JSONResponse{User: userToAPI(user)}, nil
 }
+
+// otpLockoutSeconds mirrors account.otpLockout for the Retry-After header.
+var otpLockoutSeconds = int((15 * time.Minute).Seconds())
 
 func (s *Server) ResendVerification(ctx context.Context, request ResendVerificationRequestObject) (ResendVerificationResponseObject, error) {
 	// Answers 202 regardless — see the spec note on enumeration.

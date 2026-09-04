@@ -458,8 +458,9 @@ func TestRegisterAndVerifyEmail(t *testing.T) {
 		t.Errorf("verification sent to %v, want %s", msg.To, addr)
 	}
 
-	link := extractToken(t, msg.TextBody)
-	if rec := h.do(http.MethodPost, "/auth/verify-email", fmt.Sprintf(`{"token":%q}`, link), ""); rec.Code != http.StatusOK {
+	code := extractOTP(t, msg.TextBody)
+	verifyBody := fmt.Sprintf(`{"email":%q,"code":%q}`, addr, code)
+	if rec := h.do(http.MethodPost, "/auth/verify-email", verifyBody, ""); rec.Code != http.StatusOK {
 		t.Fatalf("verify: status %d, body %s", rec.Code, rec.Body)
 	}
 
@@ -478,12 +479,12 @@ func TestRegisterAndVerifyEmail(t *testing.T) {
 	}
 
 	// Single use.
-	again := h.do(http.MethodPost, "/auth/verify-email", fmt.Sprintf(`{"token":%q}`, link), "")
+	again := h.do(http.MethodPost, "/auth/verify-email", verifyBody, "")
 	if again.Code != http.StatusBadRequest {
-		t.Errorf("reusing a token returned %d, want 400", again.Code)
+		t.Errorf("reusing a code returned %d, want 400", again.Code)
 	}
-	if code := errorCode(t, again); code != "invalid_token" {
-		t.Errorf("error code = %q, want invalid_token", code)
+	if got := errorCode(t, again); got != "invalid_code" {
+		t.Errorf("error code = %q, want invalid_code", got)
 	}
 }
 
@@ -852,6 +853,31 @@ func TestEmailScopingAndValidation(t *testing.T) {
 	if h.do(http.MethodPost, "/v1/emails", `{"from":"a@acme.com","to":["b@acme.com"],"text":"x"}`, "hm_live_garbage").Code != http.StatusUnauthorized {
 		t.Error("a garbage API key was accepted")
 	}
+}
+
+// extractOTP pulls the six-digit code out of a verification email.
+func extractOTP(t *testing.T, body string) string {
+	t.Helper()
+
+	for i := 0; i+6 <= len(body); i++ {
+		run := body[i : i+6]
+		digits := true
+		for _, c := range run {
+			if c < '0' || c > '9' {
+				digits = false
+				break
+			}
+		}
+		// Bounded on both sides so a longer number cannot yield a six-digit
+		// substring of itself.
+		if digits &&
+			(i == 0 || body[i-1] < '0' || body[i-1] > '9') &&
+			(i+6 == len(body) || body[i+6] < '0' || body[i+6] > '9') {
+			return run
+		}
+	}
+	t.Fatalf("no six-digit code in body:\n%s", body)
+	return ""
 }
 
 func extractToken(t *testing.T, body string) string {

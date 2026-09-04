@@ -31,6 +31,13 @@ var (
 	resetPerEmail  = ratelimit.Rule{Name: "reset:email", Limit: 3, Window: time.Hour}
 	verifyPerEmail = ratelimit.Rule{Name: "verify:email", Limit: 3, Window: time.Hour}
 
+	// Submitting codes, as opposed to requesting them. The hard cap is the
+	// attempts column on the token row — this only stops someone cycling
+	// "request a new code, spend its 7 guesses, repeat" at machine speed.
+	// Deliberately looser than 7: it must not fire before the row counter,
+	// whose lockout is the one that carries a useful message.
+	verifyAttemptPerEmail = ratelimit.Rule{Name: "verify-attempt:email", Limit: 30, Window: time.Hour}
+
 	registerPerIP = ratelimit.Rule{Name: "register:ip", Limit: 10, Window: time.Hour}
 )
 

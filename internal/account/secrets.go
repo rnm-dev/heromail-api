@@ -6,6 +6,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"math/big"
+	"strings"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/bcrypt"
@@ -64,5 +66,39 @@ func newToken() (token string, hash []byte, err error) {
 
 func hashToken(token string) []byte {
 	sum := sha256.Sum256([]byte(token))
+	return sum[:]
+}
+
+// otpDigits is 6 because that is what people expect to be asked for and what
+// authenticator apps and SMS have trained everyone to type. The entropy that
+// costs (~20 bits) is bought back by the attempt cap, not by more digits.
+const otpDigits = 6
+
+// newOTP returns a zero-padded numeric code.
+//
+// rand.Int over an exact power-of-ten bound rather than reading bytes and
+// taking a remainder: the modulo version skews towards low codes, which is
+// exactly the part of the keyspace a guesser would try first.
+func newOTP() (string, error) {
+	max := big.NewInt(1)
+	for i := 0; i < otpDigits; i++ {
+		max.Mul(max, big.NewInt(10))
+	}
+	n, err := rand.Int(rand.Reader, max)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%0*d", otpDigits, n), nil
+}
+
+// hashOTP digests the code together with the user it belongs to.
+//
+// The user id is in the hash because user_tokens.token_hash is globally
+// unique: with only a million possible codes, two users would eventually be
+// issued the same one and the second insert would fail. Scoping the digest
+// keeps that index meaningful and means a stolen digest cannot be replayed
+// against a different account.
+func hashOTP(userID, code string) []byte {
+	sum := sha256.Sum256([]byte(userID + ":" + strings.TrimSpace(code)))
 	return sum[:]
 }
