@@ -377,6 +377,19 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+    delete:
+      tags: [workspaces]
+      operationId: deleteWorkspace
+      summary: Permanently delete a workspace as its owner
+      description: Removes workspace data and access. Global user accounts remain.
+      security: [{ session: [] }]
+      responses:
+        '204':
+          description: Workspace deleted
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /workspaces/{slug}/domains:
     parameters:
       - name: slug

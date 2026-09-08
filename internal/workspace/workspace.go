@@ -200,3 +200,17 @@ func (r Role) rank() int {
 
 // AtLeast reports whether r carries at least the privileges of min.
 func (r Role) AtLeast(min Role) bool { return r.rank() >= min.rank() }
+
+// DeleteOwned repeats the ownership check in the write itself. Foreign keys
+// remove tenant data atomically; global user accounts belong to no tenant.
+func (s *Service) DeleteOwned(ctx context.Context, userID, slug string) error {
+	result, err := s.store.pool.Exec(ctx, `DELETE FROM workspaces w WHERE w.slug=$1
+ AND EXISTS (SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=$2 AND m.role='owner')`, slug, userID)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

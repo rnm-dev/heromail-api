@@ -447,16 +447,24 @@ func (s *Service) sendVerificationEmail(ctx context.Context, user *User) {
 		From:    s.cfg.MailFrom,
 		To:      []string{user.Email},
 		Subject: "Код подтверждения: " + code,
+		// The sender is a real mailbox now, so the message invites a reply
+		// instead of telling people not to send one. "Ignore this" is still the
+		// correct advice for someone who did not sign up — nothing happens
+		// without the code — but it should not be the only option offered.
 		TextBody: fmt.Sprintf(
 			"Здравствуйте!\n\nВаш код подтверждения: %s\n\n"+
-				"Код действует %d минут. Если вы не регистрировались, просто проигнорируйте это письмо "+
-				"— без кода никто не получит доступ к аккаунту.\n",
+				"Код действует %d минут.\n\n"+
+				"Если вы не регистрировались, письмо можно проигнорировать — без кода "+
+				"никто не получит доступ к аккаунту. Если это повторяется, ответьте на "+
+				"это письмо, мы разберёмся.\n",
 			code, minutes),
 		HTMLBody: fmt.Sprintf(
 			`<p>Здравствуйте!</p><p>Ваш код подтверждения:</p>`+
 				`<p style="font-size:28px;font-weight:700;letter-spacing:4px">%s</p>`+
-				`<p>Код действует %d минут. Если вы не регистрировались, просто проигнорируйте это письмо `+
-				`— без кода никто не получит доступ к аккаунту.</p>`,
+				`<p>Код действует %d минут.</p>`+
+				`<p>Если вы не регистрировались, письмо можно проигнорировать — без кода `+
+				`никто не получит доступ к аккаунту. Если это повторяется, ответьте на это `+
+				`письмо, мы разберёмся.</p>`,
 			code, minutes),
 	})
 	if err != nil {
