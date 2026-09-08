@@ -34,14 +34,14 @@ func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 const selectColumns = `
 	id, workspace_id, from_addr, to_addrs, subject, html_body, text_body,
 	status, provider_message_id, idempotency_key, attempts, last_error,
-	created_at, updated_at`
+	created_at, updated_at, cc_addrs, bcc_addrs`
 
 func scanEmail(row pgx.Row) (*Email, error) {
 	var e Email
 	err := row.Scan(
 		&e.ID, &e.WorkspaceID, &e.FromAddr, &e.ToAddrs, &e.Subject,
 		&e.HTMLBody, &e.TextBody, &e.Status, &e.ProviderMessageID,
-		&e.IdempotencyKey, &e.Attempts, &e.LastError, &e.CreatedAt, &e.UpdatedAt,
+		&e.IdempotencyKey, &e.Attempts, &e.LastError, &e.CreatedAt, &e.UpdatedAt, &e.CcAddrs, &e.BccAddrs,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -57,6 +57,8 @@ type CreateParams struct {
 	WorkspaceID    string
 	FromAddr       string
 	ToAddrs        []string
+	CcAddrs        []string
+	BccAddrs       []string
 	Subject        string
 	HTMLBody       string
 	TextBody       string
@@ -73,10 +75,10 @@ func (s *Store) Create(ctx context.Context, p CreateParams) (*Email, error) {
 	defer tx.Rollback(ctx)
 
 	email, err := scanEmail(tx.QueryRow(ctx, `
-		INSERT INTO emails (workspace_id, from_addr, to_addrs, subject, html_body, text_body, idempotency_key)
-		VALUES ($1, $2, $3, $4, nullif($5, ''), nullif($6, ''), nullif($7, ''))
+		INSERT INTO emails (workspace_id, from_addr, to_addrs, subject, html_body, text_body, idempotency_key, cc_addrs, bcc_addrs)
+		VALUES ($1, $2, $3, $4, nullif($5, ''), nullif($6, ''), nullif($7, ''), coalesce($8::text[], '{}'), coalesce($9::text[], '{}'))
 		RETURNING`+selectColumns,
-		p.WorkspaceID, p.FromAddr, p.ToAddrs, p.Subject, p.HTMLBody, p.TextBody, p.IdempotencyKey,
+		p.WorkspaceID, p.FromAddr, p.ToAddrs, p.Subject, p.HTMLBody, p.TextBody, p.IdempotencyKey, p.CcAddrs, p.BccAddrs,
 	))
 	if err != nil {
 		var pgErr *pgconn.PgError

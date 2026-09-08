@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"strings"
 
 	"github.com/rnm/heromail/backend/internal/email"
 	"github.com/rnm/heromail/backend/internal/workspace"
@@ -17,11 +18,36 @@ import (
 // the path rather than from a credential that encodes exactly one.
 func (s *Server) SendWorkspaceEmail(ctx context.Context, request SendWorkspaceEmailRequestObject) (SendWorkspaceEmailResponseObject, error) {
 	workspaceID, _, err := s.scope(ctx, string(request.Slug), workspace.RoleMember)
-	if err != nil {
+	if errors.Is(err, workspace.ErrNotFound) {
 		return SendWorkspaceEmail404JSONResponse{NotFoundJSONResponse(errorBody("not_found", "workspace not found"))}, nil
+	}
+	if err != nil {
+		return nil, err
 	}
 	if request.Body == nil {
 		return SendWorkspaceEmail400JSONResponse{BadRequestJSONResponse(errorBody("invalid_json", "a JSON body is required"))}, nil
+	}
+
+	// Every member can send as a shared mailbox in this workspace; arbitrary
+	// addresses, even on an owned domain, are not browser sending identities.
+	boxes, err := s.inbound.MailboxesForWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	from := strings.ToLower(strings.TrimSpace(string(request.Body.From)))
+	allowed := false
+	for _, box := range boxes {
+		if strings.EqualFold(box.Address, from) {
+			allowed = true
+			break
+		}
+	}
+	at := strings.LastIndex(from, "@")
+	if !allowed || at < 0 {
+		return SendWorkspaceEmail400JSONResponse{BadRequestJSONResponse(errorBody("sender_not_allowed", "choose an existing mailbox in this workspace"))}, nil
+	}
+	if err := s.domains.AllowsSender(ctx, workspaceID, from[at+1:]); err != nil {
+		return SendWorkspaceEmail400JSONResponse{BadRequestJSONResponse(errorBody("sender_not_allowed", "verify the sender domain before sending"))}, nil
 	}
 
 	// The same per-workspace quota as the API-key path, keyed the same way:
@@ -50,8 +76,10 @@ func (s *Server) SendWorkspaceEmail(ctx context.Context, request SendWorkspaceEm
 	}
 
 	msg, err := s.emails.Send(ctx, workspaceID, idempotencyKey, email.SendRequest{
-		From:          string(request.Body.From),
+		From:          from,
 		To:            to,
+		Cc:            emailAddresses(request.Body.Cc),
+		Bcc:           emailAddresses(request.Body.Bcc),
 		Subject:       deref(request.Body.Subject),
 		HTML:          deref(request.Body.Html),
 		Text:          deref(request.Body.Text),

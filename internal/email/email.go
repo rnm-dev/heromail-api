@@ -43,6 +43,8 @@ type Email struct {
 	WorkspaceID string   `json:"workspace_id"`
 	FromAddr    string   `json:"from"`
 	ToAddrs     []string `json:"to"`
+	CcAddrs     []string `json:"cc"`
+	BccAddrs    []string `json:"bcc"`
 	Subject     string   `json:"subject"`
 	HTMLBody    *string  `json:"html,omitempty"`
 	TextBody    *string  `json:"text,omitempty"`

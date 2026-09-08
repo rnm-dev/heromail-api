@@ -130,6 +130,16 @@ func (s *Sender) Send(ctx context.Context, msg provider.Message) (string, error)
 	if err := m.To(msg.To...); err != nil {
 		return "", fmt.Errorf("%w: To %v: %v", provider.ErrInvalidMessage, msg.To, err)
 	}
+	if len(msg.Cc) > 0 {
+		if err := m.Cc(msg.Cc...); err != nil {
+			return "", fmt.Errorf("%w: Cc: %v", provider.ErrInvalidMessage, err)
+		}
+	}
+	if len(msg.Bcc) > 0 {
+		if err := m.Bcc(msg.Bcc...); err != nil {
+			return "", fmt.Errorf("%w: Bcc: %v", provider.ErrInvalidMessage, err)
+		}
+	}
 	m.Subject(msg.Subject)
 	m.SetMessageIDWithValue(messageID)
 
@@ -137,7 +147,7 @@ func (s *Sender) Send(ctx context.Context, msg provider.Message) (string, error)
 	// Content-Type or the Message-ID we just committed to returning.
 	for k, v := range msg.Headers {
 		switch strings.ToLower(k) {
-		case "message-id", "content-type", "mime-version", "from", "to", "subject":
+		case "message-id", "content-type", "mime-version", "from", "to", "cc", "bcc", "subject":
 			return "", fmt.Errorf("%w: header %q is set by the sender", provider.ErrInvalidMessage, k)
 		}
 		m.SetGenHeader(mail.Header(k), v)

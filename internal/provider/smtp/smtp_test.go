@@ -294,3 +294,22 @@ func headerValue(data, name string) string {
 	}
 	return ""
 }
+
+func TestCopiesAndHiddenRecipients(t *testing.T) {
+	s, fake := newTestSender(t)
+	_, err := s.Send(context.Background(), provider.Message{From: "sender@example.test", To: []string{"to@example.test"}, Cc: []string{"copy@example.test"}, Bcc: []string{"hidden@example.test"}, TextBody: "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	received := fake.received()
+	if len(received) != 1 {
+		t.Fatalf("messages: %d", len(received))
+	}
+	env := received[0]
+	if len(env.to) != 3 {
+		t.Fatalf("envelope recipients: %v", env.to)
+	}
+	if !strings.Contains(env.data, "copy@example.test") || strings.Contains(strings.ToLower(env.data), "bcc:") || strings.Contains(env.data, "hidden@example.test") {
+		t.Fatalf("Cc/Bcc MIME privacy failure: %s", env.data)
+	}
+}

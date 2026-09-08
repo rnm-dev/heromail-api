@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -77,6 +78,8 @@ func envBytes(name string, fallback int64) int64 {
 type SendRequest struct {
 	From    string   `json:"from"    validate:"required,email"`
 	To      []string `json:"to"      validate:"required,min=1,max=50,dive,required,email"`
+	Cc      []string `json:"cc" validate:"max=50,dive,required,email"`
+	Bcc     []string `json:"bcc" validate:"max=50,dive,required,email"`
 	Subject string   `json:"subject" validate:"max=998"`
 	HTML    string   `json:"html"    validate:"required_without=Text"`
 	Text    string   `json:"text"    validate:"required_without=HTML"`
@@ -155,6 +158,12 @@ func (s *Service) Send(ctx context.Context, workspaceID, idempotencyKey string, 
 		return nil, fmt.Errorf("%w: %s", ErrValidation, describeValidation(err))
 	}
 
+	if len(req.To)+len(req.Cc)+len(req.Bcc) > 50 {
+		return nil, fmt.Errorf("%w: at most 50 recipients in total", ErrValidation)
+	}
+	if strings.TrimSpace(req.Text) == "" && strings.TrimSpace(req.HTML) == "" {
+		return nil, fmt.Errorf("%w: message body is required", ErrValidation)
+	}
 	if err := s.checkFrom(ctx, workspaceID, req.From); err != nil {
 		return nil, err
 	}
@@ -164,6 +173,31 @@ func (s *Service) Send(ctx context.Context, workspaceID, idempotencyKey string, 
 		existing, err := s.store.ByIdempotencyKey(ctx, workspaceID, idempotencyKey)
 		switch {
 		case err == nil:
+			if existing.FromAddr != req.From || !slices.Equal(existing.ToAddrs, req.To) || !slices.Equal(existing.CcAddrs, req.Cc) || !slices.Equal(existing.BccAddrs, req.Bcc) || existing.Subject != req.Subject || deref(existing.TextBody) != req.Text || deref(existing.HTMLBody) != req.HTML {
+				return nil, fmt.Errorf("%w: idempotency key belongs to a different message", ErrValidation)
+			}
+			attached, err := s.store.AttachmentsByEmailID(ctx, existing.ID)
+			if err != nil {
+				return nil, err
+			}
+			ids := make([]string, 0, len(attached))
+			for _, a := range attached {
+				ids = append(ids, a.ID)
+			}
+			expected := slices.Clone(req.AttachmentIDs)
+			slices.Sort(ids)
+			slices.Sort(expected)
+			if !slices.Equal(ids, expected) {
+				return nil, fmt.Errorf("%w: attachment list differs from original request", ErrValidation)
+			}
+			// A queue outage can leave a recorded message without a task.
+			// EnqueueSend deduplicates tasks by email ID; the worker also
+			// refuses terminal messages. Recover using the same message ID.
+			if existing.Status == StatusQueued {
+				if err := s.queue.EnqueueSend(ctx, existing.ID); err != nil {
+					return existing, fmt.Errorf("%w: %v", ErrEnqueueFailed, err)
+				}
+			}
 			return existing, nil
 		case !errors.Is(err, ErrNotFound):
 			return nil, fmt.Errorf("look up idempotency key: %w", err)
@@ -196,6 +230,8 @@ func (s *Service) Send(ctx context.Context, workspaceID, idempotencyKey string, 
 		WorkspaceID:    workspaceID,
 		FromAddr:       req.From,
 		ToAddrs:        req.To,
+		CcAddrs:        req.Cc,
+		BccAddrs:       req.Bcc,
 		Subject:        req.Subject,
 		HTMLBody:       req.HTML,
 		TextBody:       req.Text,

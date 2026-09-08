@@ -90,6 +90,12 @@ func (f *fakeEnqueuer) EnqueueSend(_ context.Context, emailID string) error {
 	if f.err != nil {
 		return f.err
 	}
+	// Match AsynqEnqueuer's task-ID deduplication, including queue recovery.
+	for _, id := range f.ids {
+		if id == emailID {
+			return nil
+		}
+	}
 	f.ids = append(f.ids, emailID)
 	return nil
 }

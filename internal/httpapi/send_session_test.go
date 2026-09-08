@@ -33,6 +33,9 @@ func TestSessionSendQueuesAMessage(t *testing.T) {
 	workspaceID := h.workspaceFor(token, "session-send")
 	slug := h.slugFor(workspaceID)
 	domain := h.verifiedDomainFor(t, workspaceID)
+	if _, err := h.pool.Exec(t.Context(), `INSERT INTO mailboxes(domain_id,local_part) SELECT id,'noreply' FROM domains WHERE workspace_id=$1 AND domain=$2`, workspaceID, domain); err != nil {
+		t.Fatal(err)
+	}
 	h.mail.reset()
 
 	body := fmt.Sprintf(`{"from":"noreply@%s","to":["viktor@acme.test"],"subject":"Hi","text":"hello"}`, domain)

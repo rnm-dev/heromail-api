@@ -159,6 +159,8 @@ func (w *Worker) Deliver(ctx context.Context, emailID string, retried, maxRetry 
 	messageID, sendErr := w.sender.Send(ctx, provider.Message{
 		From:        claimed.FromAddr,
 		To:          claimed.ToAddrs,
+		Cc:          claimed.CcAddrs,
+		Bcc:         claimed.BccAddrs,
 		Subject:     claimed.Subject,
 		HTMLBody:    deref(claimed.HTMLBody),
 		TextBody:    deref(claimed.TextBody),

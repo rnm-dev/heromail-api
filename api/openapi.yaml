@@ -34,6 +34,60 @@ tags:
 security: []
 
 paths:
+  /workspaces/{slug}/emails/{id}:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { type: string } }
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getWorkspaceEmail
+      tags: [emails]
+      summary: Read a queued message and its sending status as a workspace member
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: Message status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Email' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /workspaces/{slug}/attachments:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: uploadWorkspaceAttachment
+      tags: [emails]
+      summary: Upload a file as a workspace member
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Uploaded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Attachment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '413':
+          description: File too large
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Storage not configured
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /workspaces/{slug}/members:
     parameters:
       - { name: slug, in: path, required: true, schema: { type: string } }
@@ -784,6 +838,129 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /workspaces/{slug}/emails:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Slug' }
+    post:
+      tags: [emails]
+      operationId: sendWorkspaceEmail
+      summary: Send a message as a signed-in person
+      description: |
+        The same pipeline as `POST /v1/emails`, reached with a session instead
+        of an API key — so the mail client in the browser can send without
+        anyone putting a workspace key into a page.
+
+        The two are not merged because the credentials are not
+        interchangeable: a key belongs to a machine and grants exactly one
+        workspace, while a session belongs to a person who may belong to
+        several. Membership is what authorises this one.
+      security: [{ session: [] }]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: { type: string, maxLength: 255 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendEmailRequest' }
+      responses:
+        '202':
+          description: Queued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SendEmailResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /workspaces/{slug}/api-keys:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Slug' }
+    get:
+      tags: [workspaces]
+      operationId: listApiKeys
+      summary: The workspace's API keys
+      description: |
+        Never returns a usable key — only the prefix, which identifies a key in
+        a list without authenticating anything.
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: Keys
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [api_keys]
+                properties:
+                  api_keys:
+                    type: array
+                    items: { $ref: '#/components/schemas/ApiKey' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [workspaces]
+      operationId: createApiKey
+      summary: Issue an API key
+      description: |
+        Admin only. **The plaintext key is in this response and nowhere else** —
+        only its digest is stored, so it cannot be shown again.
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              additionalProperties: false
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+      responses:
+        '201':
+          description: Created. `key` is shown once.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiKeyWithSecret' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{slug}/api-keys/{keyId}:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Slug' }
+      - name: keyId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [workspaces]
+      operationId: revokeApiKey
+      summary: Revoke an API key
+      description: |
+        Admin only. The row is kept and stamped `revoked_at` rather than
+        deleted, so the key that signed past sends stays identifiable.
+      security: [{ session: [] }]
+      responses:
+        '204':
+          description: Revoked
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /v1/attachments:
     post:
       tags: [emails]
@@ -1229,6 +1406,29 @@ components:
         read_at: { type: string, format: date-time, nullable: true }
         received_at: { type: string, format: date-time }
 
+    ApiKey:
+      type: object
+      required: [id, name, key_prefix, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        key_prefix: { type: string, description: Leading characters only; never authenticates anything. }
+        last_used_at: { type: string, format: date-time, nullable: true }
+        revoked_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    ApiKeyWithSecret:
+      allOf:
+        - $ref: '#/components/schemas/ApiKey'
+        - type: object
+          required: [key]
+          properties:
+            key:
+              type: string
+              description: |
+                The full key, returned once at creation. Only its digest is
+                stored, so this is the only time it exists outside the caller.
+
     EmailStatus:
       type: string
       enum: [queued, processing, sent, failed, dead]
@@ -1246,6 +1446,14 @@ components:
         to:
           type: array
           minItems: 1
+          maxItems: 50
+          items: { type: string, format: email }
+        cc:
+          type: array
+          maxItems: 50
+          items: { type: string, format: email }
+        bcc:
+          type: array
           maxItems: 50
           items: { type: string, format: email }
         subject: { type: string, maxLength: 998 }
@@ -1289,6 +1497,14 @@ components:
         from: { type: string, format: email }
         to:
           type: array
+          items: { type: string, format: email }
+        cc:
+          type: array
+          maxItems: 50
+          items: { type: string, format: email }
+        bcc:
+          type: array
+          maxItems: 50
           items: { type: string, format: email }
         subject: { type: string }
         html: { type: string, nullable: true }

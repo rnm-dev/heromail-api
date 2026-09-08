@@ -410,6 +410,8 @@ func (s *Server) SendEmail(ctx context.Context, request SendEmailRequestObject) 
 	msg, err := s.emails.Send(ctx, workspaceID, idempotencyKey, email.SendRequest{
 		From:          string(request.Body.From),
 		To:            to,
+		Cc:            emailAddresses(request.Body.Cc),
+		Bcc:           emailAddresses(request.Body.Bcc),
 		Subject:       deref(request.Body.Subject),
 		HTML:          deref(request.Body.Html),
 		Text:          deref(request.Body.Text),

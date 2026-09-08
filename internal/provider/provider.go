@@ -15,6 +15,8 @@ import (
 // It mirrors the emails table without depending on it: a provider must not
 // need a database row to do its job.
 type Message struct {
+	Cc       []string
+	Bcc      []string
 	From     string
 	To       []string
 	Subject  string

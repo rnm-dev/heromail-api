@@ -100,6 +100,8 @@ func emailToAPI(e *email.Email, attachments []email.Attachment) Email {
 		WorkspaceId:       mustUUID(e.WorkspaceID),
 		From:              openapi_types.Email(e.FromAddr),
 		To:                to,
+		Cc:                apiEmailAddresses(e.CcAddrs),
+		Bcc:               apiEmailAddresses(e.BccAddrs),
 		Subject:           e.Subject,
 		Html:              e.HTMLBody,
 		Text:              e.TextBody,
@@ -162,4 +164,22 @@ func workspaceIDFrom(ctx context.Context) (string, bool) {
 func requestContextFrom(ctx context.Context) account.RequestContext {
 	rc, _ := ctx.Value(requestContextKey).(account.RequestContext)
 	return rc
+}
+
+func emailAddresses(values *[]openapi_types.Email) []string {
+	if values == nil {
+		return nil
+	}
+	out := make([]string, len(*values))
+	for i, v := range *values {
+		out[i] = string(v)
+	}
+	return out
+}
+func apiEmailAddresses(values []string) *[]openapi_types.Email {
+	out := make([]openapi_types.Email, len(values))
+	for i, v := range values {
+		out[i] = openapi_types.Email(v)
+	}
+	return &out
 }
