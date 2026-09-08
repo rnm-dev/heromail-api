@@ -1179,6 +1179,11 @@ components:
       additionalProperties: false
       properties:
         email: { type: string, format: email, maxLength: 254 }
+        personal_name:
+          type: string
+          minLength: 3
+          maxLength: 30
+          description: Optional local part of a new private address on heromail.kz. Conflicts return 409.
         password:
           type: string
           minLength: 10
@@ -1242,6 +1247,7 @@ components:
       type: object
       required: [id, slug, name, created_at, updated_at]
       properties:
+        personal: { type: boolean }
         id: { type: string, format: uuid }
         slug: { $ref: '#/components/schemas/Slug' }
         name: { type: string }
@@ -1367,6 +1373,7 @@ components:
       type: object
       required: [id, address, created_at]
       properties:
+        can_send: { type: boolean }
         id: { type: string, format: uuid }
         address: { type: string, format: email }
         name: { type: string, nullable: true }

@@ -383,6 +383,16 @@ func (s *Service) SigningKey(ctx context.Context, domainID string) (selector str
 // already allowed today, DKIM or not.
 func (s *Service) SigningKeyForDomain(ctx context.Context, workspaceID, domainName string) (selector string, privateDER []byte, err error) {
 	d, err := s.store.ByName(ctx, workspaceID, Normalise(domainName))
+	if errors.Is(err, ErrNotFound) {
+		var allowed bool
+		e := s.store.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM mailboxes m JOIN domains d ON d.id=m.domain_id WHERE m.personal_workspace_id=$1 AND d.domain=$2)`, workspaceID, Normalise(domainName)).Scan(&allowed)
+		if e != nil {
+			return "", nil, e
+		}
+		if allowed {
+			d, err = s.store.ByNameUnscoped(ctx, Normalise(domainName))
+		}
+	}
 	if err != nil {
 		return "", nil, err
 	}
@@ -451,4 +461,26 @@ func newToken() (string, error) {
 		return "", err
 	}
 	return tokenPrefix + hex.EncodeToString(raw), nil
+}
+
+// AllowsAddress checks the complete sender, so sharing a service domain never
+// grants a personal workspace (or the domain tenant) another user's identity.
+func (s *Service) AllowsAddress(ctx context.Context, workspaceID, address string) error {
+	address = strings.ToLower(strings.TrimSpace(address))
+	at := strings.LastIndex(address, "@")
+	if at < 1 {
+		return ErrNotFound
+	}
+	var personalWorkspace string
+	err := s.store.pool.QueryRow(ctx, `SELECT m.personal_workspace_id::text FROM mailboxes m JOIN domains d ON d.id=m.domain_id WHERE m.local_part=$1 AND d.domain=$2 AND m.personal_workspace_id IS NOT NULL AND d.verified_at IS NOT NULL`, address[:at], address[at+1:]).Scan(&personalWorkspace)
+	if err == nil {
+		if personalWorkspace == workspaceID {
+			return nil
+		}
+		return ErrNotFound
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	return s.AllowsSender(ctx, workspaceID, address[at+1:])
 }

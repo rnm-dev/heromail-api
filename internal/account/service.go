@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -122,10 +123,25 @@ func NewService(store *Store, sender provider.Sender, cfg Config) *Service {
 	}
 }
 
+var personalNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,28}[a-z0-9]$`)
+
+func validatePersonalName(name string) error {
+	if !personalNamePattern.MatchString(name) || strings.Contains(name, "..") {
+		return fmt.Errorf("%w: use 3–30 Latin letters, digits, dots, underscores or hyphens", ErrValidation)
+	}
+	for _, reserved := range []string{"admin", "administrator", "support", "postmaster", "abuse", "security", "noreply", "no-reply", "mailer-daemon", "root", "info", "sales", "billing", "help", "contact", "hostmaster", "webmaster"} {
+		if name == reserved {
+			return fmt.Errorf("%w: this address is reserved", ErrValidation)
+		}
+	}
+	return nil
+}
+
 type RegisterRequest struct {
-	Email    string `json:"email"    validate:"required,email,max=254"`
-	Password string `json:"password" validate:"required"`
-	Name     string `json:"name"     validate:"max=200"`
+	PersonalName string `json:"personal_name"`
+	Email        string `json:"email"    validate:"required,email,max=254"`
+	Password     string `json:"password" validate:"required"`
+	Name         string `json:"name"     validate:"max=200"`
 }
 
 type LoginRequest struct {
@@ -159,7 +175,16 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, rc RequestC
 		return nil, fmt.Errorf("%w: %s", ErrValidation, describeValidation(err))
 	}
 
+	req.PersonalName = strings.ToLower(strings.TrimSpace(req.PersonalName))
+	if req.PersonalName != "" {
+		if err := validatePersonalName(req.PersonalName); err != nil {
+			return nil, err
+		}
+	}
 	email := normaliseEmail(req.Email)
+	if strings.HasSuffix(email, "@heromail.kz") {
+		return nil, fmt.Errorf("%w: укажите внешнюю почту для входа и восстановления", ErrValidation)
+	}
 
 	hash, err := hashPassword(req.Password)
 	if err != nil {
@@ -169,7 +194,7 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, rc RequestC
 		return nil, err
 	}
 
-	user, err := s.store.CreateWithPassword(ctx, email, strings.TrimSpace(req.Name), hash)
+	user, err := s.store.CreateWithPassword(ctx, email, strings.TrimSpace(req.Name), hash, req.PersonalName)
 	if err != nil {
 		return nil, err
 	}

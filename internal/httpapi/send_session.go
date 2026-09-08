@@ -46,7 +46,7 @@ func (s *Server) SendWorkspaceEmail(ctx context.Context, request SendWorkspaceEm
 	if !allowed || at < 0 {
 		return SendWorkspaceEmail400JSONResponse{BadRequestJSONResponse(errorBody("sender_not_allowed", "choose an existing mailbox in this workspace"))}, nil
 	}
-	if err := s.domains.AllowsSender(ctx, workspaceID, from[at+1:]); err != nil {
+	if err := s.domains.AllowsAddress(ctx, workspaceID, from); err != nil {
 		return SendWorkspaceEmail400JSONResponse{BadRequestJSONResponse(errorBody("sender_not_allowed", "verify the sender domain before sending"))}, nil
 	}
 

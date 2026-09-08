@@ -40,6 +40,7 @@ func credentialsToAPI(c *account.Credentials) Credentials {
 
 func workspaceToAPI(w *workspace.Workspace) Workspace {
 	return Workspace{
+		Personal:  &w.Personal,
 		Id:        mustUUID(w.ID),
 		Slug:      w.Slug,
 		Name:      w.Name,

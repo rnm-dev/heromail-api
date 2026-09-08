@@ -147,13 +147,16 @@ func (s *Server) Register(ctx context.Context, request RegisterRequestObject) (R
 	}
 
 	creds, err := s.accounts.Register(ctx, account.RegisterRequest{
-		Email:    string(request.Body.Email),
-		Password: request.Body.Password,
-		Name:     name,
+		Email:        string(request.Body.Email),
+		Password:     request.Body.Password,
+		Name:         name,
+		PersonalName: deref(request.Body.PersonalName),
 	}, rc)
 	switch {
 	case errors.Is(err, account.ErrValidation):
 		return Register400JSONResponse{BadRequestJSONResponse(errorBody("validation_failed", err.Error()))}, nil
+	case errors.Is(err, account.ErrAddressTaken):
+		return Register409JSONResponse(errorBody("address_taken", "Этот адрес @heromail.kz уже занят. Выберите другое имя.")), nil
 	case errors.Is(err, account.ErrEmailTaken):
 		return Register409JSONResponse(errorBody("email_taken", "this email is already registered")), nil
 	case err != nil:
@@ -307,7 +310,7 @@ func (s *Server) ListWorkspaces(ctx context.Context, _ ListWorkspacesRequestObje
 	out := make([]WorkspaceMembership, 0, len(memberships))
 	for _, m := range memberships {
 		out = append(out, WorkspaceMembership{
-			Id:        mustUUID(m.ID),
+			Personal: &m.Personal, Id: mustUUID(m.ID),
 			Slug:      m.Slug,
 			Name:      m.Name,
 			Role:      Role(m.Role),

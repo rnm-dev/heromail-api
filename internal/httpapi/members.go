@@ -21,6 +21,13 @@ func (s *Server) memberScope(ctx context.Context, slug string) (string, int, Err
 	if forbidden {
 		return "", 403, errorBody("forbidden", "only the workspace owner can manage users"), nil
 	}
+	var personal bool
+	if err := s.pool.QueryRow(ctx, `SELECT personal_owner_id IS NOT NULL FROM workspaces WHERE id=$1`, id).Scan(&personal); err != nil {
+		return "", 0, Error{}, err
+	}
+	if personal {
+		return "", 403, errorBody("personal_workspace", "Личный ящик доступен только владельцу; управление участниками отключено."), nil
+	}
 	return id, 0, Error{}, nil
 }
 

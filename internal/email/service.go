@@ -91,7 +91,7 @@ type SendRequest struct {
 // interface so this package keeps no dependency on maildomain, and so a test
 // can allow or refuse without a database.
 type DomainGuard interface {
-	AllowsSender(ctx context.Context, workspaceID, domain string) error
+	AllowsAddress(ctx context.Context, workspaceID, address string) error
 }
 
 // Service turns a validated request into a stored, queued email.
@@ -130,7 +130,7 @@ func (s *Service) checkFrom(ctx context.Context, workspaceID, from string) error
 	}
 	domain := strings.ToLower(from[at+1:])
 
-	if err := s.domains.AllowsSender(ctx, workspaceID, domain); err != nil {
+	if err := s.domains.AllowsAddress(ctx, workspaceID, from); err != nil {
 		return fmt.Errorf("%w: %s", ErrFromNotAllowed, domain)
 	}
 	return nil

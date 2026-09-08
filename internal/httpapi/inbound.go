@@ -31,7 +31,10 @@ func (s *Server) ListMailboxes(ctx context.Context, request ListMailboxesRequest
 
 	out := make([]Mailbox, 0, len(boxes))
 	for i := range boxes {
-		out = append(out, mailboxToAPI(&boxes[i]))
+		box := mailboxToAPI(&boxes[i])
+		allowed := s.domains.AllowsAddress(ctx, workspaceID, boxes[i].Address) == nil
+		box.CanSend = &allowed
+		out = append(out, box)
 	}
 	return ListMailboxes200JSONResponse{Mailboxes: out}, nil
 }

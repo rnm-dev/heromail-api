@@ -15,6 +15,7 @@ import (
 
 var (
 	ErrNotFound      = errors.New("not found")
+	ErrAddressTaken  = errors.New("personal address already taken")
 	ErrEmailTaken    = errors.New("email already registered")
 	ErrSubjectLinked = errors.New("identity already linked to another user")
 )
@@ -49,7 +50,7 @@ func scanUser(row pgx.Row) (*User, error) {
 
 // CreateWithPassword inserts the user and their password identity together: a
 // user with no way to sign in would be unreachable state.
-func (s *Store) CreateWithPassword(ctx context.Context, email, name string, passwordHash []byte) (*User, error) {
+func (s *Store) CreateWithPassword(ctx context.Context, email, name string, passwordHash []byte, personalName ...string) (*User, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -74,6 +75,35 @@ func (s *Store) CreateWithPassword(ctx context.Context, email, name string, pass
 			return nil, ErrEmailTaken
 		}
 		return nil, fmt.Errorf("insert password identity: %w", err)
+	}
+
+	if len(personalName) > 0 && personalName[0] != "" {
+		var domainID, workspaceID string
+		var existingIdentity bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE email=$1)`, personalName[0]+"@heromail.kz").Scan(&existingIdentity); err != nil {
+			return nil, err
+		}
+		if existingIdentity {
+			return nil, ErrAddressTaken
+		}
+		if err := tx.QueryRow(ctx, `SELECT id FROM domains WHERE domain='heromail.kz' AND verified_at IS NOT NULL FOR SHARE`).Scan(&domainID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, fmt.Errorf("%w: personal mail is not configured yet", ErrValidation)
+			}
+			return nil, err
+		}
+		if err := tx.QueryRow(ctx, `INSERT INTO workspaces(slug,name,personal_owner_id) VALUES('personal-' || replace($1::text,'-',''),$2,$1::uuid) RETURNING id`, user.ID, personalName[0]+"@heromail.kz").Scan(&workspaceID); err != nil {
+			return nil, err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO workspace_members(workspace_id,user_id,role) VALUES($1,$2,'owner')`, workspaceID, user.ID); err != nil {
+			return nil, err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO mailboxes(domain_id,local_part,name,personal_workspace_id) VALUES($1,$2,$3,$4)`, domainID, personalName[0], name, workspaceID); err != nil {
+			if isUnique(err) {
+				return nil, ErrAddressTaken
+			}
+			return nil, err
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {

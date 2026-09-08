@@ -17,9 +17,9 @@ type Store struct{ pool *pgxpool.Pool }
 
 func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 
-// mailboxColumns joins through domains so a mailbox always carries the
-// workspace that owns it — every read above this layer is scoped by it.
-const mailboxColumns = ` m.id, m.domain_id, d.workspace_id,
+// Corporate mailboxes inherit their domain tenant. Personal addresses override
+// it with their private workspace; every mailbox/message read uses that scope.
+const mailboxColumns = ` m.id, m.domain_id, coalesce(m.personal_workspace_id, d.workspace_id),
 	m.local_part || '@' || d.domain AS address, m.name, m.created_at, m.updated_at`
 
 func scanMailbox(row pgx.Row) (*Mailbox, error) {
@@ -79,7 +79,7 @@ func (s *Store) MailboxesForWorkspace(ctx context.Context, workspaceID string) (
 	rows, err := s.pool.Query(ctx, `
 		SELECT`+mailboxColumns+`
 		FROM mailboxes m JOIN domains d ON d.id = m.domain_id
-		WHERE d.workspace_id = $1 ORDER BY address`, workspaceID)
+		WHERE coalesce(m.personal_workspace_id, d.workspace_id) = $1 ORDER BY address`, workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +183,7 @@ func (s *Store) MessageByID(ctx context.Context, workspaceID, id string) (*Messa
 		FROM messages msg
 		JOIN mailboxes mb ON mb.id = msg.mailbox_id
 		JOIN domains d ON d.id = mb.domain_id
-		WHERE msg.id = $1 AND d.workspace_id = $2`, id, workspaceID))
+		WHERE msg.id = $1 AND coalesce(mb.personal_workspace_id, d.workspace_id) = $2`, id, workspaceID))
 }
 
 // MarkRead stamps read_at, scoped the same way.
@@ -192,7 +192,7 @@ func (s *Store) MarkRead(ctx context.Context, workspaceID, id string) (*Message,
 		UPDATE messages SET read_at = coalesce(read_at, now())
 		WHERE id = $1 AND mailbox_id IN (
 			SELECT mb.id FROM mailboxes mb JOIN domains d ON d.id = mb.domain_id
-			WHERE d.workspace_id = $2)
+			WHERE coalesce(mb.personal_workspace_id, d.workspace_id) = $2)
 		RETURNING`+strings.ReplaceAll(messageColumns, "msg.", ""), id, workspaceID))
 }
 

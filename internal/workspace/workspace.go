@@ -33,6 +33,7 @@ const (
 )
 
 type Workspace struct {
+	Personal  bool
 	ID        string
 	Slug      string
 	Name      string
@@ -50,11 +51,11 @@ type Store struct{ pool *pgxpool.Pool }
 
 func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 
-const columns = ` id, slug, name, created_at, updated_at`
+const columns = ` id, slug, name, created_at, updated_at, personal_owner_id IS NOT NULL`
 
 func scan(row pgx.Row) (*Workspace, error) {
 	var w Workspace
-	err := row.Scan(&w.ID, &w.Slug, &w.Name, &w.CreatedAt, &w.UpdatedAt)
+	err := row.Scan(&w.ID, &w.Slug, &w.Name, &w.CreatedAt, &w.UpdatedAt, &w.Personal)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -98,7 +99,7 @@ func (s *Store) Create(ctx context.Context, ownerID, slug, name string) (*Worksp
 // ListForUser returns the workspaces a user belongs to, with their role.
 func (s *Store) ListForUser(ctx context.Context, userID string) ([]Membership, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT w.id, w.slug, w.name, w.created_at, w.updated_at, m.role
+		SELECT w.id, w.slug, w.name, w.created_at, w.updated_at, w.personal_owner_id IS NOT NULL, m.role
 		FROM workspaces w JOIN workspace_members m ON m.workspace_id = w.id
 		WHERE m.user_id = $1
 		ORDER BY w.created_at`, userID)
@@ -110,7 +111,7 @@ func (s *Store) ListForUser(ctx context.Context, userID string) ([]Membership, e
 	memberships := []Membership{}
 	for rows.Next() {
 		var m Membership
-		if err := rows.Scan(&m.ID, &m.Slug, &m.Name, &m.CreatedAt, &m.UpdatedAt, &m.Role); err != nil {
+		if err := rows.Scan(&m.ID, &m.Slug, &m.Name, &m.CreatedAt, &m.UpdatedAt, &m.Personal, &m.Role); err != nil {
 			return nil, err
 		}
 		memberships = append(memberships, m)
@@ -122,7 +123,7 @@ func (s *Store) ListForUser(ctx context.Context, userID string) ([]Membership, e
 // they do not belong to is indistinguishable from one that does not exist.
 func (s *Store) BySlugForUser(ctx context.Context, userID, slug string) (*Workspace, error) {
 	return scan(s.pool.QueryRow(ctx, `
-		SELECT w.id, w.slug, w.name, w.created_at, w.updated_at
+		SELECT w.id, w.slug, w.name, w.created_at, w.updated_at, w.personal_owner_id IS NOT NULL
 		FROM workspaces w JOIN workspace_members m ON m.workspace_id = w.id
 		WHERE m.user_id = $1 AND w.slug = $2`, userID, slug))
 }
