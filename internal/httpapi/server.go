@@ -22,7 +22,7 @@ import (
 	"github.com/rnm/heromail/backend/internal/workspace"
 )
 
-//go:generate go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -config config.yaml ../../api/openapi.yaml
+//go:generate sh -c "cd ../.. && go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0 -config internal/httpapi/config.yaml api/openapi.yaml"
 
 // Server wires the domain services to the generated interface. It holds no
 // business rules of its own: decode, delegate, map errors to status codes.

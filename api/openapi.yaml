@@ -34,6 +34,81 @@ tags:
 security: []
 
 paths:
+  /workspaces/{slug}/members:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: listMembers
+      tags: [workspaces]
+      summary: Owner-only workspace member management
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MemberList' }
+        default:
+          description: Error (400 invalid input, 401 unauthenticated, 403 owner required, 404 not found, 409 conflict)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    post:
+      operationId: addMember
+      tags: [workspaces]
+      summary: Owner-only workspace member management
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddMemberRequest' }
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MemberList' }
+        default:
+          description: Error (400 invalid input, 401 unauthenticated, 403 owner required, 404 not found, 409 conflict)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /workspaces/{slug}/members/{userId}:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { type: string } }
+      - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      operationId: updateMember
+      tags: [workspaces]
+      summary: Owner-only workspace member management
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateMemberRequest' }
+      responses:
+        '204':
+          description: Success
+        default:
+          description: Error (400 invalid input, 401 unauthenticated, 403 owner required, 404 not found, 409 conflict)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    delete:
+      operationId: removeMember
+      tags: [workspaces]
+      summary: Owner-only workspace member management
+      security: [{ session: [] }]
+      responses:
+        '204':
+          description: Success
+        default:
+          description: Error (400 invalid input, 401 unauthenticated, 403 owner required, 404 not found, 409 conflict)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /health:
     get:
       tags: [health]
@@ -111,7 +186,15 @@ paths:
     post:
       tags: [auth]
       operationId: verifyEmail
-      summary: Consume an emailed verification link
+      summary: Confirm an address with the emailed one-time code
+      description: |
+        Wrong codes are counted. After 7 failures the code is locked for a
+        while and even the correct one is refused — otherwise the lock would
+        tell an attacker exactly when they guessed right.
+
+        A wrong code and an address with no pending code are reported
+        identically, so this cannot be used to discover which addresses are
+        registered.
       security: []
       requestBody:
         required: true
@@ -125,10 +208,11 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/UserEnvelope' }
         '400':
-          description: The token is unknown, expired or already used
+          description: The code is wrong, expired or already used
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
 
   /auth/resend-verification:
     post:
@@ -671,6 +755,32 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    Member:
+      type: object
+      required: [id, email, name, role]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        name: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+    MemberList:
+      type: object
+      required: [members]
+      properties:
+        members:
+          type: array
+          items: { $ref: '#/components/schemas/Member' }
+    AddMemberRequest:
+      type: object
+      required: [email, role]
+      properties:
+        email: { type: string }
+        role: { type: string, enum: [admin, member] }
+    UpdateMemberRequest:
+      type: object
+      required: [role]
+      properties:
+        role: { type: string, enum: [admin, member] }
     Error:
       type: object
       required: [error]
@@ -768,10 +878,18 @@ components:
 
     VerifyEmailRequest:
       type: object
-      required: [token]
+      required: [email, code]
       additionalProperties: false
+      description: |
+        The code is presented together with the address it was sent to: the
+        attempt has to be attributed to an account in order to count against
+        that account's attempt budget.
       properties:
-        token: { type: string }
+        email: { type: string, format: email }
+        code:
+          type: string
+          pattern: '^[0-9]{6}$'
+          description: The six-digit code from the verification email.
 
     ForgotPasswordRequest:
       type: object
