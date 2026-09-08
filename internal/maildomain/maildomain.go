@@ -392,6 +392,24 @@ func (s *Service) SigningKeyForDomain(ctx context.Context, workspaceID, domainNa
 	return s.SigningKey(ctx, d.ID)
 }
 
+// AllowsSender reports whether the workspace has claimed this domain and
+// proven it owns it.
+//
+// Deliberately not the DKIM lookup: a domain can be verified and still have no
+// active signing key, and "may they send as this" is a question about
+// ownership, not about whether we can sign. Conflating them refuses mail from
+// a domain the workspace demonstrably owns.
+func (s *Service) AllowsSender(ctx context.Context, workspaceID, domainName string) error {
+	d, err := s.store.ByName(ctx, workspaceID, Normalise(domainName))
+	if err != nil {
+		return err
+	}
+	if !d.Verified() {
+		return ErrNotVerified
+	}
+	return nil
+}
+
 // SystemSigningKey resolves the active DKIM key for a domain we send our own
 // mail from, without reference to a workspace — see ByNameUnscoped.
 //

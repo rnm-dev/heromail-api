@@ -159,6 +159,7 @@ type harness struct {
 	// spill into another.
 	clientIP string
 	domains  *maildomain.Service
+	accounts *account.Service
 	pool     *pgxpool.Pool
 }
 
@@ -225,6 +226,7 @@ func newHarness(t *testing.T) *harness {
 		limiter:  limiter,
 		clientIP: fmt.Sprintf("198.51.100.%d", time.Now().UnixNano()%250+1),
 		domains:  domains,
+		accounts: accounts,
 		pool:     pool,
 	}
 }
@@ -352,6 +354,17 @@ func (h *harness) workspaceFor(sessionToken, slug string) string {
 	}
 	json.Unmarshal(rec.Body.Bytes(), &ws)
 	return ws.ID
+}
+
+// slugFor looks up a workspace's slug, since workspaceFor returns only the id.
+func (h *harness) slugFor(workspaceID string) string {
+	h.t.Helper()
+	var slug string
+	if err := h.pool.QueryRow(context.Background(),
+		`SELECT slug FROM workspaces WHERE id = $1`, workspaceID).Scan(&slug); err != nil {
+		h.t.Fatalf("look up slug: %v", err)
+	}
+	return slug
 }
 
 // runWorker delivers one queued message, as the worker process would.

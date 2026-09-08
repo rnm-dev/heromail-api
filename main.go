@@ -95,6 +95,12 @@ func main() {
 	// exist before any of that to keep the failure order readable.
 	accounts.WithSigner(domains)
 
+	// A workspace may only send as a domain it has verified. Attached here
+	// rather than in the constructor because it needs the domain service,
+	// which needs the sealer — and because leaving it off is a deliberate
+	// choice a deployment should have to make, not a default it inherits.
+	emails.WithDomainGuard(domains)
+
 	// The routes themselves are generated from api/openapi.yaml; this is only
 	// the wiring of services into that generated surface.
 	handler := httpapi.Router(

@@ -37,6 +37,10 @@ var ErrAttachmentTooLarge = errors.New("attachment is too large")
 // ATTACHMENT_MAX_TOTAL_BYTES.
 var ErrAttachmentsTooLarge = errors.New("attachments are too large combined")
 
+// ErrFromNotAllowed means the workspace has not proven it owns the domain in
+// the From address.
+var ErrFromNotAllowed = errors.New("sender domain is not a verified domain of this workspace")
+
 // defaultAttachmentMaxBytes and defaultAttachmentMaxTotalBytes are the
 // fallback limits: 25MB is the ceiling most receiving MTAs (Gmail, Outlook)
 // apply to an entire message, so there is no point accepting more than that
@@ -80,12 +84,53 @@ type SendRequest struct {
 	AttachmentIDs []string `json:"-" validate:"max=20,dive,uuid"`
 }
 
+// DomainGuard answers whether a workspace may send as a domain. It is an
+// interface so this package keeps no dependency on maildomain, and so a test
+// can allow or refuse without a database.
+type DomainGuard interface {
+	AllowsSender(ctx context.Context, workspaceID, domain string) error
+}
+
 // Service turns a validated request into a stored, queued email.
 type Service struct {
 	store    *Store
 	queue    Enqueuer
 	blobs    storage.Store
+	domains  DomainGuard
 	validate *validator.Validate
+}
+
+// WithDomainGuard turns on sender-domain enforcement.
+//
+// Optional, and off in tests that are about something else, because switching
+// it on changes what every send means: without it a workspace may claim any
+// From address, which is how this started and is not something to leave on in
+// production.
+func (s *Service) WithDomainGuard(guard DomainGuard) *Service {
+	s.domains = guard
+	return s
+}
+
+// checkFrom refuses a From address on a domain the workspace has not verified.
+//
+// Asks about ownership, not about signing. Those looked like the same question
+// and are not: a domain can be verified and still have no active DKIM key, and
+// refusing mail from a domain the workspace demonstrably owns because we cannot
+// sign it would be the wrong failure.
+func (s *Service) checkFrom(ctx context.Context, workspaceID, from string) error {
+	if s.domains == nil {
+		return nil
+	}
+	at := strings.LastIndex(from, "@")
+	if at < 0 || at+1 >= len(from) {
+		return fmt.Errorf("%w: %s", ErrValidation, "From is not an address")
+	}
+	domain := strings.ToLower(from[at+1:])
+
+	if err := s.domains.AllowsSender(ctx, workspaceID, domain); err != nil {
+		return fmt.Errorf("%w: %s", ErrFromNotAllowed, domain)
+	}
+	return nil
 }
 
 // NewService wires a Service. blobs may be nil — a deployment with no bucket
@@ -108,6 +153,10 @@ func NewService(store *Store, queue Enqueuer, blobs storage.Store) *Service {
 func (s *Service) Send(ctx context.Context, workspaceID, idempotencyKey string, req SendRequest) (*Email, error) {
 	if err := s.validate.Struct(req); err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrValidation, describeValidation(err))
+	}
+
+	if err := s.checkFrom(ctx, workspaceID, req.From); err != nil {
+		return nil, err
 	}
 
 	// An earlier request under the same key already did this work.

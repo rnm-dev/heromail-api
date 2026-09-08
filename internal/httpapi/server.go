@@ -419,7 +419,8 @@ func (s *Server) SendEmail(ctx context.Context, request SendEmailRequestObject) 
 	case errors.Is(err, email.ErrValidation),
 		errors.Is(err, email.ErrNotFound),
 		errors.Is(err, email.ErrAttachmentNotFound),
-		errors.Is(err, email.ErrAttachmentsTooLarge):
+		errors.Is(err, email.ErrAttachmentsTooLarge),
+		errors.Is(err, email.ErrFromNotAllowed):
 		return SendEmail400JSONResponse{BadRequestJSONResponse(errorBody("validation_failed", err.Error()))}, nil
 	case errors.Is(err, email.ErrEnqueueFailed):
 		// The row exists but nothing will deliver it. A 5xx is right: this is
