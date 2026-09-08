@@ -11,6 +11,7 @@ import (
 	"github.com/rnm/heromail/backend/internal/auth"
 	"github.com/rnm/heromail/backend/internal/email"
 	"github.com/rnm/heromail/backend/internal/httpapi"
+	"github.com/rnm/heromail/backend/internal/inbound"
 	"github.com/rnm/heromail/backend/internal/maildomain"
 	smtpprovider "github.com/rnm/heromail/backend/internal/provider/smtp"
 	"github.com/rnm/heromail/backend/internal/ratelimit"
@@ -97,7 +98,7 @@ func main() {
 	// The routes themselves are generated from api/openapi.yaml; this is only
 	// the wiring of services into that generated surface.
 	handler := httpapi.Router(
-		httpapi.NewServer(pool, accounts, emails, workspaces, domains, limiter),
+		httpapi.NewServer(pool, accounts, emails, workspaces, domains, inbound.NewStore(pool), limiter),
 		auth.New(pool),
 		accounts,
 	)

@@ -17,6 +17,7 @@ import (
 
 	"github.com/rnm/heromail/backend/internal/account"
 	"github.com/rnm/heromail/backend/internal/email"
+	"github.com/rnm/heromail/backend/internal/inbound"
 	"github.com/rnm/heromail/backend/internal/maildomain"
 	"github.com/rnm/heromail/backend/internal/ratelimit"
 	"github.com/rnm/heromail/backend/internal/workspace"
@@ -32,6 +33,7 @@ type Server struct {
 	emails     *email.Service
 	workspaces *workspace.Service
 	domains    *maildomain.Service
+	inbound    *inbound.Store
 	limiter    *ratelimit.Limiter
 }
 
@@ -41,6 +43,7 @@ func NewServer(
 	emails *email.Service,
 	workspaces *workspace.Service,
 	domains *maildomain.Service,
+	inboundStore *inbound.Store,
 	limiter *ratelimit.Limiter,
 ) *Server {
 	return &Server{
@@ -49,6 +52,7 @@ func NewServer(
 		emails:     emails,
 		workspaces: workspaces,
 		domains:    domains,
+		inbound:    inboundStore,
 		limiter:    limiter,
 	}
 }

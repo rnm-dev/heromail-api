@@ -23,6 +23,7 @@ import (
 	"github.com/rnm/heromail/backend/internal/apikey"
 	"github.com/rnm/heromail/backend/internal/auth"
 	"github.com/rnm/heromail/backend/internal/email"
+	"github.com/rnm/heromail/backend/internal/inbound"
 	"github.com/rnm/heromail/backend/internal/maildomain"
 	"github.com/rnm/heromail/backend/internal/provider"
 	"github.com/rnm/heromail/backend/internal/ratelimit"
@@ -209,6 +210,7 @@ func newHarness(t *testing.T) *harness {
 		email.NewService(emailStore, queue, blobs),
 		workspace.NewService(workspace.NewStore(pool)),
 		domains,
+		inbound.NewStore(pool),
 		limiter,
 	)
 
