@@ -55,13 +55,56 @@ type Config struct {
 	MailFrom string
 }
 
+// SystemSigner resolves the DKIM key for the domain our own mail is sent from.
+//
+// It is an interface, not *maildomain.Service, for the same reason the sender
+// is: this package is tested without a database, and a signer is optional —
+// nil means send unsigned, which is what dev and every test do.
+type SystemSigner interface {
+	SystemSigningKey(ctx context.Context, domain string) (selector string, privateKeyDER []byte, err error)
+}
+
 // Service holds the account rules. It depends on provider.Sender rather than
 // SMTP, so tests substitute a fake transport.
 type Service struct {
 	store    *Store
 	sender   provider.Sender
+	signer   SystemSigner
 	cfg      Config
 	validate *validator.Validate
+}
+
+// WithSigner attaches DKIM signing for system mail. Separate from the
+// constructor because it is genuinely optional: without it verification codes
+// still send, just unsigned.
+func (s *Service) WithSigner(signer SystemSigner) *Service {
+	s.signer = signer
+	return s
+}
+
+// signMailFrom resolves the DKIM key for the MAIL_FROM domain, or nil if this
+// deployment has no signer, no such domain, or the domain is unverified.
+//
+// A failure here never blocks the mail. System mail carries verification codes
+// and reset links — refusing to send one because a signature could not be
+// produced would lock people out of their accounts to protect a deliverability
+// improvement, which is the wrong trade.
+func (s *Service) signMailFrom(ctx context.Context) *provider.DKIM {
+	if s.signer == nil {
+		return nil
+	}
+	at := strings.LastIndex(s.cfg.MailFrom, "@")
+	if at < 0 || at+1 >= len(s.cfg.MailFrom) {
+		return nil
+	}
+	domain := s.cfg.MailFrom[at+1:]
+
+	selector, der, err := s.signer.SystemSigningKey(ctx, domain)
+	if err != nil {
+		log.Printf("account: no DKIM key for %s, sending unsigned: %v", domain, err)
+		return nil
+	}
+	return &provider.DKIM{Domain: domain, Selector: selector, PrivateKeyDER: der}
 }
 
 func NewService(store *Store, sender provider.Sender, cfg Config) *Service {
@@ -288,6 +331,7 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) {
 		strings.TrimRight(s.cfg.AppBaseURL, "/"), url.QueryEscape(token))
 
 	_, err = s.sender.Send(ctx, provider.Message{
+		DKIM:    s.signMailFrom(ctx),
 		From:    s.cfg.MailFrom,
 		To:      []string{user.Email},
 		Subject: "Сброс пароля",
@@ -399,6 +443,7 @@ func (s *Service) sendVerificationEmail(ctx context.Context, user *User) {
 	minutes := int(verificationTTL.Minutes())
 
 	_, err = s.sender.Send(ctx, provider.Message{
+		DKIM:    s.signMailFrom(ctx),
 		From:    s.cfg.MailFrom,
 		To:      []string{user.Email},
 		Subject: "Код подтверждения: " + code,

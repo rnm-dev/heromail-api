@@ -126,6 +126,18 @@ func (s *Store) ByName(ctx context.Context, workspaceID, name string) (*Domain, 
 		`SELECT`+columns+` FROM domains WHERE workspace_id = $1 AND domain = $2`, workspaceID, name))
 }
 
+// ByNameUnscoped finds a domain without a workspace filter. Domain names are
+// globally unique, so the name alone identifies one row.
+//
+// Only system mail uses it: our own verification codes and reset links are not
+// sent on behalf of a tenant, so there is no workspace to scope the lookup to.
+// Every tenant-facing path must keep using ByName, or one workspace could read
+// another's domain.
+func (s *Store) ByNameUnscoped(ctx context.Context, name string) (*Domain, error) {
+	return scan(s.pool.QueryRow(ctx,
+		`SELECT`+columns+` FROM domains WHERE domain = $1`, name))
+}
+
 // RecordCheck stores the outcome of a DNS check. On success it stamps
 // verified_at; on failure it records why, leaving any previous verification
 // intact — a transient DNS blip must not un-verify a working domain.
@@ -371,6 +383,22 @@ func (s *Service) SigningKey(ctx context.Context, domainID string) (selector str
 // already allowed today, DKIM or not.
 func (s *Service) SigningKeyForDomain(ctx context.Context, workspaceID, domainName string) (selector string, privateDER []byte, err error) {
 	d, err := s.store.ByName(ctx, workspaceID, Normalise(domainName))
+	if err != nil {
+		return "", nil, err
+	}
+	if !d.Verified() {
+		return "", nil, ErrNotVerified
+	}
+	return s.SigningKey(ctx, d.ID)
+}
+
+// SystemSigningKey resolves the active DKIM key for a domain we send our own
+// mail from, without reference to a workspace — see ByNameUnscoped.
+//
+// Same contract as SigningKeyForDomain: ErrNotFound and ErrNotVerified mean
+// "send unsigned", anything else is a real failure.
+func (s *Service) SystemSigningKey(ctx context.Context, domainName string) (selector string, privateDER []byte, err error) {
+	d, err := s.store.ByNameUnscoped(ctx, Normalise(domainName))
 	if err != nil {
 		return "", nil, err
 	}

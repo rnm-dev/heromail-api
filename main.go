@@ -88,6 +88,12 @@ func main() {
 		DMARCReportTo: os.Getenv("DMARC_REPORT_TO"),
 	})
 
+	// System mail signs with the MAIL_FROM domain's key, if that domain has been
+	// claimed and verified here. Attached after the fact because the domain
+	// service needs the sealer, which needs SECRET_KEY — and accounts has to
+	// exist before any of that to keep the failure order readable.
+	accounts.WithSigner(domains)
+
 	// The routes themselves are generated from api/openapi.yaml; this is only
 	// the wiring of services into that generated surface.
 	handler := httpapi.Router(

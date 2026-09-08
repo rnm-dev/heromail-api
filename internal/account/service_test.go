@@ -2,6 +2,9 @@ package account
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"fmt"
 	"os"
 	"strings"
@@ -180,5 +183,101 @@ func TestBearerToken(t *testing.T) {
 				t.Errorf("bearerToken(%q) = %q, want %q", tc.header, got, tc.want)
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------- system DKIM
+
+// fakeSigner stands in for the domain service, so signing can be tested
+// without a verified domain or a sealer.
+type fakeSigner struct {
+	selector string
+	der      []byte
+	err      error
+}
+
+func (f fakeSigner) SystemSigningKey(context.Context, string) (string, []byte, error) {
+	return f.selector, f.der, f.err
+}
+
+// registerFor creates an account and returns the mail that went out for it.
+func registerFor(t *testing.T, svc *Service, pool *pgxpool.Pool, mail *fakeSender, name string) provider.Message {
+	t.Helper()
+
+	addr := fmt.Sprintf("%s-%d@acme.test", name, time.Now().UnixNano())
+	t.Cleanup(func() {
+		pool.Exec(context.Background(), `DELETE FROM users WHERE email = $1`, addr)
+	})
+
+	if _, err := svc.Register(context.Background(), RegisterRequest{
+		Email: addr, Password: "correct-horse-battery", Name: "DKIM",
+	}, RequestContext{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	mail.mu.Lock()
+	defer mail.mu.Unlock()
+	if len(mail.sent) == 0 {
+		t.Fatal("no mail was sent")
+	}
+	return mail.sent[len(mail.sent)-1]
+}
+
+// Verification codes are the mail most likely to be filtered, so they are
+// exactly the mail that needs signing.
+func TestSystemMailIsSignedWhenTheDomainHasAKey(t *testing.T) {
+	pool := testPool(t)
+	mail := &fakeSender{}
+	svc := NewService(NewStore(pool), mail, Config{MailFrom: "noreply@heromail.test"})
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshal key: %v", err)
+	}
+	svc.WithSigner(fakeSigner{selector: "hm-test", der: der})
+
+	msg := registerFor(t, svc, pool, mail, "dkim-signed")
+	if msg.DKIM == nil {
+		t.Fatal("system mail went out unsigned")
+	}
+	if msg.DKIM.Selector != "hm-test" {
+		t.Errorf("selector = %q, want hm-test", msg.DKIM.Selector)
+	}
+	// The signing domain comes from MAIL_FROM rather than being guessed.
+	if msg.DKIM.Domain != "heromail.test" {
+		t.Errorf("domain = %q, want heromail.test", msg.DKIM.Domain)
+	}
+}
+
+// A missing or unverified domain must not stop a verification code going out.
+// Refusing to send would lock someone out of their own account in order to
+// protect a deliverability improvement — the wrong way round.
+func TestSystemMailStillSendsWithoutAKey(t *testing.T) {
+	pool := testPool(t)
+	mail := &fakeSender{}
+	svc := NewService(NewStore(pool), mail, Config{MailFrom: "noreply@heromail.test"})
+	svc.WithSigner(fakeSigner{err: ErrNotFound})
+
+	msg := registerFor(t, svc, pool, mail, "dkim-nokey")
+	if msg.DKIM != nil {
+		t.Error("signed with a key the signer said it did not have")
+	}
+	if len(msg.To) == 0 {
+		t.Error("the message was not addressed to anyone")
+	}
+}
+
+// No signer configured at all — dev, and every other test in this package.
+func TestSystemMailIsUnsignedWithoutASigner(t *testing.T) {
+	pool := testPool(t)
+	mail := &fakeSender{}
+	svc := NewService(NewStore(pool), mail, Config{MailFrom: "noreply@heromail.test"})
+
+	if msg := registerFor(t, svc, pool, mail, "dkim-nosigner"); msg.DKIM != nil {
+		t.Error("signed without a signer")
 	}
 }
