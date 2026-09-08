@@ -119,6 +119,11 @@ func (s *session) Logout() error { return nil }
 func NewServer(store *Store, addr string) *smtp.Server {
 	srv := smtp.NewServer(NewBackend(store))
 	srv.LMTP = true
+	// Explicitly TCP. go-smtp defaults LMTP to a *unix socket*, so leaving this
+	// unset makes ListenAndServe create a file named after the host:port and
+	// report success while nothing listens on the network at all — the process
+	// looks healthy and every delivery is refused.
+	srv.Network = "tcp"
 	srv.Addr = addr
 	srv.Domain = "heromail"
 	srv.ReadTimeout = 60 * time.Second

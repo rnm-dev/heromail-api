@@ -270,3 +270,60 @@ func errorAs(err error, target **smtp.SMTPError) bool {
 	}
 	return false
 }
+
+// The LMTP server must bind a TCP port, not a unix socket.
+//
+// This exists because the original tests built their own net.Listener and
+// called Serve on it, which skipped the binding entirely. go-smtp defaults
+// LMTP to a unix socket, so ListenAndServe quietly created a file named
+// "0.0.0.0:2525" and reported success — a process that looked healthy while
+// every delivery was refused with "lost connection while receiving the initial
+// server greeting".
+//
+// Going through ListenAndServe is the whole point: it is the call production
+// makes, and it was the only one nothing covered.
+func TestServerListensOnTCP(t *testing.T) {
+	if os.Getenv("DATABASE_URL") == "" {
+		t.Skip("DATABASE_URL is not set")
+	}
+
+	pool, err := pgxpool.New(context.Background(), os.Getenv("DATABASE_URL"))
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	// Port 0 asks the OS for a free one; a unix socket cannot honour that, so
+	// this fails loudly rather than creating a stray file.
+	srv := NewServer(NewStore(pool), "127.0.0.1:0")
+	if srv.Network != "tcp" {
+		t.Fatalf("network = %q, want tcp — LMTP defaults to a unix socket", srv.Network)
+	}
+
+	ln, err := net.Listen(srv.Network, srv.Addr)
+	if err != nil {
+		t.Fatalf("listen on %s/%s: %v", srv.Network, srv.Addr, err)
+	}
+	defer ln.Close()
+	go srv.Serve(ln)
+	t.Cleanup(func() { srv.Close() })
+
+	// A greeting on connect is what Postfix waits for.
+	conn, err := net.DialTimeout("tcp", ln.Addr().String(), 5*time.Second)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
+
+	line, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		t.Fatalf("no greeting: %v", err)
+	}
+	if !strings.HasPrefix(line, "220 ") {
+		t.Errorf("greeting = %q, want a 220", line)
+	}
+	if !strings.Contains(line, "LMTP") {
+		t.Errorf("greeting %q does not announce LMTP", line)
+	}
+}
