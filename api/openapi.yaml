@@ -1183,7 +1183,8 @@ components:
           type: string
           minLength: 3
           maxLength: 30
-          description: Optional local part of a new private address on heromail.kz. Conflicts return 409.
+          deprecated: true
+          description: Retained for stale clients. Nonempty values are rejected with 400; registration uses an existing email only.
         password:
           type: string
           minLength: 10

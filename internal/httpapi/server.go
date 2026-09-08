@@ -155,8 +155,6 @@ func (s *Server) Register(ctx context.Context, request RegisterRequestObject) (R
 	switch {
 	case errors.Is(err, account.ErrValidation):
 		return Register400JSONResponse{BadRequestJSONResponse(errorBody("validation_failed", err.Error()))}, nil
-	case errors.Is(err, account.ErrAddressTaken):
-		return Register409JSONResponse(errorBody("address_taken", "Этот адрес @heromail.kz уже занят. Выберите другое имя.")), nil
 	case errors.Is(err, account.ErrEmailTaken):
 		return Register409JSONResponse(errorBody("email_taken", "this email is already registered")), nil
 	case err != nil:
