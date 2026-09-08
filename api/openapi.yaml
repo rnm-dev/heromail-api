@@ -376,16 +376,20 @@ paths:
               schema: { $ref: '#/components/schemas/Workspace' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
-
     delete:
       tags: [workspaces]
       operationId: deleteWorkspace
-      summary: Permanently delete a workspace as its owner
-      description: Removes workspace data and access. Global user accounts remain.
+      summary: Delete a workspace and everything under it
+      description: |
+        Owner only. Domains, mailboxes, messages, API keys and sent mail all
+        cascade — this is not reversible.
+
+        A workspace the caller cannot see is `404` and one they can see but do
+        not own is `403`, the same distinction the domain endpoints draw.
       security: [{ session: [] }]
       responses:
         '204':
-          description: Workspace deleted
+          description: Deleted
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -652,6 +656,133 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /workspaces/{slug}/mailboxes:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Slug' }
+    get:
+      tags: [inbound]
+      operationId: listMailboxes
+      summary: Addresses this workspace receives mail at
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: The workspace's mailboxes
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mailboxes]
+                properties:
+                  mailboxes:
+                    type: array
+                    items: { $ref: '#/components/schemas/Mailbox' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [inbound]
+      operationId: createMailbox
+      summary: Start receiving mail at an address
+      description: |
+        The domain must already be verified. Accepting mail for a domain whose
+        ownership was never proven would let anyone who typed a name into the
+        UI intercept somebody else's mail by pointing its MX here.
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateMailboxRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Mailbox' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: That address already exists
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /workspaces/{slug}/mailboxes/{mailboxId}/messages:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Slug' }
+      - name: mailboxId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [inbound]
+      operationId: listMessages
+      summary: Received mail, newest first
+      security: [{ session: [] }]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: Messages
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [messages]
+                properties:
+                  messages:
+                    type: array
+                    items: { $ref: '#/components/schemas/ReceivedMessage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{slug}/messages/{messageId}:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Slug' }
+      - name: messageId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [inbound]
+      operationId: getMessage
+      summary: One received message
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: The message
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReceivedMessage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [inbound]
+      operationId: markMessageRead
+      summary: Mark a message read
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: The message, now read
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReceivedMessage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /v1/attachments:
     post:
@@ -1054,6 +1185,49 @@ components:
         is_primary:
           type: boolean
           description: Only `true` is meaningful; a workspace always has a primary once one is set.
+
+    Mailbox:
+      type: object
+      required: [id, address, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        address: { type: string, format: email }
+        name: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    CreateMailboxRequest:
+      type: object
+      required: [domain, local_part]
+      additionalProperties: false
+      properties:
+        domain: { $ref: '#/components/schemas/DomainName' }
+        local_part:
+          type: string
+          pattern: '^[a-z0-9._%+-]+$'
+          description: The part before the @, lowercased.
+        name: { type: string, maxLength: 200 }
+
+    ReceivedMessage:
+      type: object
+      required: [id, mailbox_id, subject, size_bytes, received_at]
+      description: |
+        `raw` is deliberately absent: the source of a message can be megabytes,
+        and no view that lists subjects needs it.
+      properties:
+        id: { type: string, format: uuid }
+        mailbox_id: { type: string, format: uuid }
+        envelope_from: { type: string }
+        envelope_to: { type: string }
+        message_id: { type: string, nullable: true }
+        from: { type: string, nullable: true }
+        from_name: { type: string, nullable: true }
+        subject: { type: string }
+        sent_at: { type: string, format: date-time, nullable: true }
+        text: { type: string, nullable: true }
+        html: { type: string, nullable: true }
+        size_bytes: { type: integer }
+        read_at: { type: string, format: date-time, nullable: true }
+        received_at: { type: string, format: date-time }
 
     EmailStatus:
       type: string
