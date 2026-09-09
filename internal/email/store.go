@@ -224,7 +224,10 @@ func (s *Store) SearchForUser(ctx context.Context, userID, query string, limit i
 			SELECT 1 FROM workspace_members wm
 			WHERE wm.workspace_id = e.workspace_id AND wm.user_id = $1
 		)
-		AND strpos(lower(concat_ws(' ', e.from_addr, array_to_string(e.to_addrs, ' '),
+		AND (e.retained_owner_id IS NULL OR e.retained_owner_id=$1)
+		AND NOT EXISTS (SELECT 1 FROM mailboxes mb JOIN domains d ON d.id=mb.domain_id
+            WHERE lower(mb.local_part || '@' || d.domain)=lower(e.from_addr) AND mb.owner_user_id IS NOT NULL AND mb.owner_user_id<>$1)
+        AND strpos(lower(concat_ws(' ', e.from_addr, array_to_string(e.to_addrs, ' '),
 			e.subject, e.text_body, e.html_body)), lower($2)) > 0
 		ORDER BY e.created_at DESC
 		LIMIT $3`, userID, query, limit)

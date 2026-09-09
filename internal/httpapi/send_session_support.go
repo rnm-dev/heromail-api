@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"github.com/rnm/heromail/backend/internal/account"
 	"github.com/rnm/heromail/backend/internal/email"
 	"github.com/rnm/heromail/backend/internal/workspace"
 	"io"
@@ -80,6 +81,18 @@ func (s *Server) GetWorkspaceEmail(ctx context.Context, request GetWorkspaceEmai
 	case err != nil:
 		log.Printf("get email: %v", err)
 		return nil, err
+	}
+
+	userID := ""
+	if user, ok := account.CurrentUser(ctx); ok {
+		userID = user.ID
+	}
+	allowed, err := s.inbound.CanReadOutbound(ctx, userID, msg.ID)
+	if err != nil {
+		return nil, err
+	}
+	if !allowed {
+		return GetWorkspaceEmail404JSONResponse{NotFoundJSONResponse(errorBody("not_found", "email not found"))}, nil
 	}
 
 	attachments, err := s.emails.AttachmentsForEmail(ctx, msg.ID)

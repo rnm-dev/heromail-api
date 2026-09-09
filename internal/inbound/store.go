@@ -20,11 +20,11 @@ func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 // Corporate mailboxes inherit their domain tenant. Personal addresses override
 // it with their private workspace; every mailbox/message read uses that scope.
 const mailboxColumns = ` m.id, m.domain_id, coalesce(m.personal_workspace_id, d.workspace_id),
-	m.local_part || '@' || d.domain AS address, m.name, m.created_at, m.updated_at`
+	m.local_part || '@' || d.domain AS address, m.name, m.created_at, m.updated_at, m.owner_user_id`
 
 func scanMailbox(row pgx.Row) (*Mailbox, error) {
 	var m Mailbox
-	err := row.Scan(&m.ID, &m.DomainID, &m.WorkspaceID, &m.Address, &m.Name, &m.CreatedAt, &m.UpdatedAt)
+	err := row.Scan(&m.ID, &m.DomainID, &m.WorkspaceID, &m.Address, &m.Name, &m.CreatedAt, &m.UpdatedAt, &m.OwnerUserID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNoMailbox
 	}
@@ -52,12 +52,16 @@ func (s *Store) MailboxByAddress(ctx context.Context, address string) (*Mailbox,
 }
 
 // CreateMailbox adds an address under a domain the caller already owns.
-func (s *Store) CreateMailbox(ctx context.Context, domainID, localPart, name string) (*Mailbox, error) {
+func (s *Store) CreateMailbox(ctx context.Context, domainID, localPart, name string, owner ...*string) (*Mailbox, error) {
 	var id string
+	var ownerID *string
+	if len(owner) > 0 {
+		ownerID = owner[0]
+	}
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO mailboxes (domain_id, local_part, name)
-		VALUES ($1, $2, nullif($3, '')) RETURNING id`,
-		domainID, strings.ToLower(strings.TrimSpace(localPart)), strings.TrimSpace(name)).Scan(&id)
+		INSERT INTO mailboxes (domain_id, local_part, name, owner_user_id)
+		VALUES ($1, $2, nullif($3, ''), $4) RETURNING id`,
+		domainID, strings.ToLower(strings.TrimSpace(localPart)), strings.TrimSpace(name), ownerID).Scan(&id)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
@@ -153,11 +157,15 @@ func (s *Store) Deliver(ctx context.Context, p DeliverParams) (*Message, error) 
 }
 
 // ListMessages returns a mailbox's messages, newest first.
-func (s *Store) ListMessages(ctx context.Context, mailboxID string, limit int) ([]Message, error) {
+func (s *Store) ListMessages(ctx context.Context, mailboxID string, limit int, offset ...int) ([]Message, error) {
+	skip := 0
+	if len(offset) > 0 {
+		skip = offset[0]
+	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT`+messageColumns+`
-		FROM messages msg WHERE msg.mailbox_id = $1 ORDER BY msg.received_at DESC LIMIT $2`,
-		mailboxID, limit)
+		FROM messages msg WHERE msg.mailbox_id = $1 AND msg.folder='INBOX' ORDER BY msg.received_at DESC,msg.id DESC LIMIT $2 OFFSET $3`,
+		mailboxID, limit, skip)
 	if err != nil {
 		return nil, err
 	}

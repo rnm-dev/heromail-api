@@ -766,6 +766,34 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /workspaces/{slug}/mailboxes/{mailboxId}/owner:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/Slug' } }
+      - { name: mailboxId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      operationId: assignMailboxOwner
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [owner_user_id]
+              properties:
+                owner_user_id: { type: string, format: uuid, nullable: true }
+      responses:
+        '200':
+          description: Updated mailbox
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Mailbox' }
+        default:
+          description: Assignment failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /workspaces/{slug}/mailboxes/{mailboxId}/messages:
     parameters:
       - name: slug
@@ -786,6 +814,9 @@ paths:
           in: query
           required: false
           schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
       responses:
         '200':
           description: Messages
@@ -1374,6 +1405,8 @@ components:
       type: object
       required: [id, address, created_at]
       properties:
+        owner_user_id: { type: string, format: uuid, nullable: true }
+        can_read: { type: boolean }
         can_send: { type: boolean }
         id: { type: string, format: uuid }
         address: { type: string, format: email }
@@ -1385,6 +1418,8 @@ components:
       required: [domain, local_part]
       additionalProperties: false
       properties:
+        owner_user_id: { type: string, format: uuid }
+        shared: { type: boolean, default: false }
         domain: { $ref: '#/components/schemas/DomainName' }
         local_part:
           type: string

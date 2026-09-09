@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rnm/heromail/backend/internal/account"
 )
 
 var (
@@ -470,6 +471,17 @@ func (s *Service) AllowsAddress(ctx context.Context, workspaceID, address string
 	at := strings.LastIndex(address, "@")
 	if at < 1 {
 		return ErrNotFound
+	}
+	var privateOwner *string
+	e := s.store.pool.QueryRow(ctx, `SELECT m.owner_user_id::text FROM mailboxes m JOIN domains d ON d.id=m.domain_id WHERE m.local_part=$1 AND d.domain=$2`, address[:at], address[at+1:]).Scan(&privateOwner)
+	if e != nil && !errors.Is(e, pgx.ErrNoRows) {
+		return e
+	}
+	if privateOwner != nil {
+		user, ok := account.CurrentUser(ctx)
+		if !ok || user.ID != *privateOwner {
+			return ErrNotFound
+		}
 	}
 	var personalWorkspace string
 	err := s.store.pool.QueryRow(ctx, `SELECT m.personal_workspace_id::text FROM mailboxes m JOIN domains d ON d.id=m.domain_id WHERE m.local_part=$1 AND d.domain=$2 AND m.personal_workspace_id IS NOT NULL AND d.verified_at IS NOT NULL`, address[:at], address[at+1:]).Scan(&personalWorkspace)

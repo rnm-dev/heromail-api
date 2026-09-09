@@ -507,6 +507,18 @@ func (s *Server) GetEmail(ctx context.Context, request GetEmailRequestObject) (G
 		return nil, err
 	}
 
+	userID := ""
+	if user, ok := account.CurrentUser(ctx); ok {
+		userID = user.ID
+	}
+	allowed, err := s.inbound.CanReadOutbound(ctx, userID, msg.ID)
+	if err != nil {
+		return nil, err
+	}
+	if !allowed {
+		return GetEmail404JSONResponse{NotFoundJSONResponse(errorBody("not_found", "email not found"))}, nil
+	}
+
 	attachments, err := s.emails.AttachmentsForEmail(ctx, msg.ID)
 	if err != nil {
 		log.Printf("get email %s: load attachments: %v", msg.ID, err)

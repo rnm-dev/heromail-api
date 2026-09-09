@@ -25,6 +25,7 @@ var ErrDuplicate = errors.New("message already delivered")
 
 // Mailbox is an address we accept mail for.
 type Mailbox struct {
+	OwnerUserID *string   `json:"owner_user_id,omitempty"`
 	ID          string    `json:"id"`
 	DomainID    string    `json:"domain_id"`
 	WorkspaceID string    `json:"workspace_id"`

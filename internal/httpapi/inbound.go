@@ -8,6 +8,7 @@ import (
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
+	"github.com/rnm/heromail/backend/internal/account"
 	"github.com/rnm/heromail/backend/internal/inbound"
 	"github.com/rnm/heromail/backend/internal/maildomain"
 	"github.com/rnm/heromail/backend/internal/workspace"
@@ -29,10 +30,23 @@ func (s *Server) ListMailboxes(ctx context.Context, request ListMailboxesRequest
 		return nil, err
 	}
 
+	user, _ := account.CurrentUser(ctx)
+	role, err := s.workspaces.MembershipRole(ctx, workspaceID, user.ID)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]Mailbox, 0, len(boxes))
 	for i := range boxes {
+		canRead, err := s.inbound.CanAccess(ctx, user.ID, boxes[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		if !canRead && !role.AtLeast(workspace.RoleAdmin) {
+			continue
+		}
 		box := mailboxToAPI(&boxes[i])
-		allowed := s.domains.AllowsAddress(ctx, workspaceID, boxes[i].Address) == nil
+		box.CanRead = &canRead
+		allowed := canRead && s.domains.AllowsAddress(ctx, workspaceID, boxes[i].Address) == nil
 		box.CanSend = &allowed
 		out = append(out, box)
 	}
@@ -73,7 +87,22 @@ func (s *Server) CreateMailbox(ctx context.Context, request CreateMailboxRequest
 		name = *request.Body.Name
 	}
 
-	box, err := s.inbound.CreateMailbox(ctx, domain.ID, request.Body.LocalPart, name)
+	user, _ := account.CurrentUser(ctx)
+	var owner *string
+	if request.Body.Shared == nil || !*request.Body.Shared {
+		id := user.ID
+		owner = &id
+	}
+	if request.Body.OwnerUserId != nil {
+		id := request.Body.OwnerUserId.String()
+		owner = &id
+	}
+	if owner != nil {
+		if _, err := s.workspaces.MembershipRole(ctx, workspaceID, *owner); err != nil {
+			return CreateMailbox400JSONResponse{BadRequestJSONResponse(errorBody("invalid_owner", "owner must be a workspace member"))}, nil
+		}
+	}
+	box, err := s.inbound.CreateMailbox(ctx, domain.ID, request.Body.LocalPart, name, owner)
 	if err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			return CreateMailbox409JSONResponse(errorBody("address_taken", "that address already exists")), nil
@@ -93,7 +122,12 @@ func (s *Server) ListMessages(ctx context.Context, request ListMessagesRequestOb
 	// Confirm the mailbox belongs to this workspace before reading its mail,
 	// or a member of any workspace could list any other's inbox by id.
 	box, err := s.inbound.MailboxByID(ctx, request.MailboxId.String())
-	if err != nil || box.WorkspaceID != workspaceID {
+	user, _ := account.CurrentUser(ctx)
+	allowed := false
+	if err == nil {
+		allowed, err = s.inbound.CanAccess(ctx, user.ID, box.ID)
+	}
+	if err != nil || !allowed || box.WorkspaceID != workspaceID {
 		return ListMessages404JSONResponse{NotFoundJSONResponse(errorBody("not_found", "mailbox not found"))}, nil
 	}
 
@@ -102,7 +136,11 @@ func (s *Server) ListMessages(ctx context.Context, request ListMessagesRequestOb
 		limit = *request.Params.Limit
 	}
 
-	msgs, err := s.inbound.ListMessages(ctx, box.ID, limit)
+	offset := 0
+	if request.Params.Offset != nil {
+		offset = *request.Params.Offset
+	}
+	msgs, err := s.inbound.ListMessages(ctx, box.ID, limit, offset)
 	if err != nil {
 		log.Printf("list messages: %v", err)
 		return nil, err
@@ -121,7 +159,7 @@ func (s *Server) GetMessage(ctx context.Context, request GetMessageRequestObject
 		return GetMessage404JSONResponse{NotFoundJSONResponse(errorBody("not_found", "workspace not found"))}, nil
 	}
 
-	msg, err := s.inbound.MessageByID(ctx, workspaceID, request.MessageId.String())
+	msg, err := s.readableMessage(ctx, workspaceID, request.MessageId.String())
 	if err != nil {
 		// Another workspace's message lands here too, which is the point.
 		return GetMessage404JSONResponse{NotFoundJSONResponse(errorBody("not_found", "message not found"))}, nil
@@ -135,6 +173,9 @@ func (s *Server) MarkMessageRead(ctx context.Context, request MarkMessageReadReq
 		return MarkMessageRead404JSONResponse{NotFoundJSONResponse(errorBody("not_found", "workspace not found"))}, nil
 	}
 
+	if _, err := s.readableMessage(ctx, workspaceID, request.MessageId.String()); err != nil {
+		return MarkMessageRead404JSONResponse{NotFoundJSONResponse(errorBody("not_found", "message not found"))}, nil
+	}
 	msg, err := s.inbound.MarkRead(ctx, workspaceID, request.MessageId.String())
 	if err != nil {
 		return MarkMessageRead404JSONResponse{NotFoundJSONResponse(errorBody("not_found", "message not found"))}, nil
@@ -143,11 +184,17 @@ func (s *Server) MarkMessageRead(ctx context.Context, request MarkMessageReadReq
 }
 
 func mailboxToAPI(m *inbound.Mailbox) Mailbox {
+	var owner *openapi_types.UUID
+	if m.OwnerUserID != nil {
+		id := mustUUID(*m.OwnerUserID)
+		owner = &id
+	}
 	return Mailbox{
-		Id:        mustUUID(m.ID),
-		Address:   openapi_types.Email(m.Address),
-		Name:      m.Name,
-		CreatedAt: m.CreatedAt,
+		OwnerUserId: owner,
+		Id:          mustUUID(m.ID),
+		Address:     openapi_types.Email(m.Address),
+		Name:        m.Name,
+		CreatedAt:   m.CreatedAt,
 	}
 }
 
@@ -168,4 +215,52 @@ func receivedMessageToAPI(m *inbound.Message) ReceivedMessage {
 		ReadAt:       m.ReadAt,
 		ReceivedAt:   m.ReceivedAt,
 	}
+}
+
+func (s *Server) readableMessage(ctx context.Context, workspaceID, id string) (*inbound.Message, error) {
+	msg, err := s.inbound.MessageByID(ctx, workspaceID, id)
+	if err != nil {
+		return nil, err
+	}
+	user, ok := account.CurrentUser(ctx)
+	if !ok {
+		return nil, inbound.ErrNoMailbox
+	}
+	allowed, err := s.inbound.CanAccess(ctx, user.ID, msg.MailboxID)
+	if err != nil {
+		return nil, err
+	}
+	if !allowed {
+		return nil, inbound.ErrNoMailbox
+	}
+	return msg, nil
+}
+
+func (s *Server) AssignMailboxOwner(ctx context.Context, r AssignMailboxOwnerRequestObject) (AssignMailboxOwnerResponseObject, error) {
+	fail := func(code int, msg string) (AssignMailboxOwnerResponseObject, error) {
+		return AssignMailboxOwnerdefaultJSONResponse{StatusCode: code, Body: errorBody("assignment_failed", msg)}, nil
+	}
+	ws, forbidden, err := s.scope(ctx, r.Slug, workspace.RoleOwner)
+	if err != nil {
+		return fail(404, "workspace not found")
+	}
+	if forbidden {
+		return fail(403, "only the workspace owner can assign mailboxes")
+	}
+	if r.Body == nil {
+		return fail(400, "owner_user_id is required")
+	}
+	var owner *string
+	if r.Body.OwnerUserId != nil {
+		id := r.Body.OwnerUserId.String()
+		owner = &id
+	}
+	if err := s.inbound.AssignOwner(ctx, ws, r.MailboxId.String(), owner); err != nil {
+		return fail(400, err.Error())
+	}
+	box, err := s.inbound.MailboxByID(ctx, r.MailboxId.String())
+	if err != nil {
+		return nil, err
+	}
+	return AssignMailboxOwner200JSONResponse(mailboxToAPI(box)), nil
 }
