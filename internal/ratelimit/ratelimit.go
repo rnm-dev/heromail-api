@@ -54,14 +54,23 @@ func (l *Limiter) Close() error { return l.client.Close() }
 // mean a Redis blip locks every user out of signing in, which is a worse
 // outcome than briefly not enforcing a limit.
 func (l *Limiter) Allow(ctx context.Context, rule Rule, key string) Result {
+	return l.allow(ctx, rule, key, true)
+}
+
+// AllowStrict fails closed for public SMTP submission when Redis is unavailable.
+func (l *Limiter) AllowStrict(ctx context.Context, rule Rule, key string) Result {
+	return l.allow(ctx, rule, key, false)
+}
+
+func (l *Limiter) allow(ctx context.Context, rule Rule, key string, failOpen bool) Result {
 	redisKey := fmt.Sprintf("ratelimit:%s:%s:%d", rule.Name, key, time.Now().UnixNano()/int64(rule.Window))
 
 	pipe := l.client.TxPipeline()
 	incr := pipe.Incr(ctx, redisKey)
 	pipe.Expire(ctx, redisKey, rule.Window)
 	if _, err := pipe.Exec(ctx); err != nil {
-		log.Printf("ratelimit: %s for %q: %v (allowing)", rule.Name, key, err)
-		return Result{Allowed: true, Remaining: rule.Limit}
+		log.Printf("ratelimit: %s: %v (fail-open=%t)", rule.Name, err, failOpen)
+		return Result{Allowed: failOpen, Remaining: rule.Limit}
 	}
 
 	count := int(incr.Val())
