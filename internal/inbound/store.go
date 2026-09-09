@@ -105,13 +105,13 @@ func (s *Store) MailboxesForWorkspace(ctx context.Context, workspaceID string) (
 // column list usable everywhere instead of two that can drift apart.
 const messageColumns = ` msg.id, msg.mailbox_id, msg.envelope_from, msg.envelope_to, msg.message_id,
 	msg.from_addr, msg.from_name, msg.subject, msg.sent_at, msg.text_body, msg.html_body,
-	msg.size_bytes, msg.spf_pass, msg.dkim_pass, msg.read_at, msg.received_at`
+	msg.size_bytes, msg.spf_pass, msg.dkim_pass, msg.read_at, msg.received_at, msg.folder`
 
 func scanMessage(row pgx.Row) (*Message, error) {
 	var m Message
 	err := row.Scan(&m.ID, &m.MailboxID, &m.EnvelopeFrom, &m.EnvelopeTo, &m.MessageID,
 		&m.FromAddr, &m.FromName, &m.Subject, &m.SentAt, &m.TextBody, &m.HTMLBody,
-		&m.SizeBytes, &m.SPFPass, &m.DKIMPass, &m.ReadAt, &m.ReceivedAt)
+		&m.SizeBytes, &m.SPFPass, &m.DKIMPass, &m.ReadAt, &m.ReceivedAt, &m.Folder)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNoMailbox
 	}
@@ -136,16 +136,20 @@ type DeliverParams struct {
 // Message-ID is what identifies the retry as the same mail.
 func (s *Store) Deliver(ctx context.Context, p DeliverParams) (*Message, error) {
 	f := parse(p.Raw)
+	folder := deliveryFolder(p.Raw)
+	if _, err := s.pool.Exec(ctx, `INSERT INTO imap_folders(mailbox_id,name) VALUES($1,$2) ON CONFLICT DO NOTHING`, p.MailboxID, folder); err != nil {
+		return nil, err
+	}
 
 	m, err := scanMessage(s.pool.QueryRow(ctx, `
 		INSERT INTO messages (mailbox_id, envelope_from, envelope_to, message_id,
-			from_addr, from_name, subject, sent_at, text_body, html_body, raw, size_bytes)
+			from_addr, from_name, subject, sent_at, text_body, html_body, raw, size_bytes, folder)
 		VALUES ($1, $2, $3, nullif($4, ''), nullif($5, ''), nullif($6, ''), $7, $8,
-			nullif($9, ''), nullif($10, ''), $11, $12)
+			nullif($9, ''), nullif($10, ''), $11, $12, $13)
 		RETURNING`+strings.ReplaceAll(messageColumns, "msg.", ""),
 		p.MailboxID, p.EnvelopeFrom, p.EnvelopeTo, f.MessageID,
 		f.FromAddr, f.FromName, f.Subject, f.SentAt, f.Text, f.HTML,
-		p.Raw, len(p.Raw)))
+		p.Raw, len(p.Raw), folder))
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
@@ -162,10 +166,13 @@ func (s *Store) ListMessages(ctx context.Context, mailboxID string, limit int, o
 	if len(offset) > 0 {
 		skip = offset[0]
 	}
+	return s.ListFolderMessages(ctx, mailboxID, "INBOX", limit, skip)
+}
+
+func (s *Store) ListFolderMessages(ctx context.Context, mailboxID, folder string, limit, skip int) ([]Message, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT`+messageColumns+`
-		FROM messages msg WHERE msg.mailbox_id = $1 AND msg.folder='INBOX' ORDER BY msg.received_at DESC,msg.id DESC LIMIT $2 OFFSET $3`,
-		mailboxID, limit, skip)
+ SELECT`+messageColumns+`
+ FROM messages msg WHERE msg.mailbox_id=$1 AND msg.folder=$4 ORDER BY msg.received_at DESC,msg.id DESC LIMIT $2 OFFSET $3`, mailboxID, limit, skip, folder)
 	if err != nil {
 		return nil, err
 	}

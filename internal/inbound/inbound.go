@@ -41,6 +41,7 @@ type Mailbox struct {
 // parsed fields, and shipping the whole source to a browser that only wanted a
 // subject line would be wasteful.
 type Message struct {
+	Folder    string `json:"folder"`
 	ID        string `json:"id"`
 	MailboxID string `json:"mailbox_id"`
 

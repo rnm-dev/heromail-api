@@ -25,7 +25,11 @@ type Mailbox struct {
 
 func (m *Mailbox) Name() string { return m.name }
 func (m *Mailbox) Info() (*imap.MailboxInfo, error) {
-	return &imap.MailboxInfo{Name: m.name, Delimiter: ""}, nil
+	info := &imap.MailboxInfo{Name: m.name, Delimiter: ""}
+	if m.name == "Junk" {
+		info.Attributes = []string{`\Junk`}
+	}
+	return info, nil
 }
 func (m *Mailbox) Check() error {
 	ctx, c := context.WithTimeout(context.Background(), 10*time.Second)

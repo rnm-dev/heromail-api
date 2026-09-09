@@ -835,9 +835,12 @@ paths:
     get:
       tags: [inbound]
       operationId: listMessages
-      summary: Received mail, newest first
+      summary: Received mail in Inbox or Junk, newest first
       security: [{ session: [] }]
       parameters:
+        - name: folder
+          in: query
+          schema: { type: string, enum: [INBOX, Junk], default: INBOX }
         - name: limit
           in: query
           required: false
@@ -896,6 +899,34 @@ paths:
               schema: { $ref: '#/components/schemas/ReceivedMessage' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{slug}/messages/{messageId}/folder:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/Slug' } }
+      - { name: messageId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      operationId: moveReceivedMessage
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [folder]
+              properties:
+                folder: { type: string, enum: [INBOX, Junk] }
+      responses:
+        '200':
+          description: Message in its destination folder
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReceivedMessage' }
+        default:
+          description: Move failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /workspaces/{slug}/emails:
     parameters:
@@ -1458,11 +1489,12 @@ components:
 
     ReceivedMessage:
       type: object
-      required: [id, mailbox_id, subject, size_bytes, received_at]
+      required: [id, mailbox_id, subject, size_bytes, received_at, folder]
       description: |
         `raw` is deliberately absent: the source of a message can be megabytes,
         and no view that lists subjects needs it.
       properties:
+        folder: { type: string, description: Persistent IMAP folder name. }
         id: { type: string, format: uuid }
         mailbox_id: { type: string, format: uuid }
         envelope_from: { type: string }

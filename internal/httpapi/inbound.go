@@ -140,7 +140,14 @@ func (s *Server) ListMessages(ctx context.Context, request ListMessagesRequestOb
 	if request.Params.Offset != nil {
 		offset = *request.Params.Offset
 	}
-	msgs, err := s.inbound.ListMessages(ctx, box.ID, limit, offset)
+	folder := "INBOX"
+	if request.Params.Folder != nil {
+		folder = string(*request.Params.Folder)
+	}
+	if folder != "INBOX" && folder != "Junk" {
+		return ListMessages404JSONResponse{NotFoundJSONResponse(errorBody("not_found", "folder not found"))}, nil
+	}
+	msgs, err := s.inbound.ListFolderMessages(ctx, box.ID, folder, limit, offset)
 	if err != nil {
 		log.Printf("list messages: %v", err)
 		return nil, err
@@ -200,6 +207,7 @@ func mailboxToAPI(m *inbound.Mailbox) Mailbox {
 
 func receivedMessageToAPI(m *inbound.Message) ReceivedMessage {
 	return ReceivedMessage{
+		Folder:       m.Folder,
 		Id:           mustUUID(m.ID),
 		MailboxId:    mustUUID(m.MailboxID),
 		EnvelopeFrom: &m.EnvelopeFrom,
@@ -263,4 +271,26 @@ func (s *Server) AssignMailboxOwner(ctx context.Context, r AssignMailboxOwnerReq
 		return nil, err
 	}
 	return AssignMailboxOwner200JSONResponse(mailboxToAPI(box)), nil
+}
+
+func (s *Server) MoveReceivedMessage(ctx context.Context, r MoveReceivedMessageRequestObject) (MoveReceivedMessageResponseObject, error) {
+	fail := func(code int, msg string) (MoveReceivedMessageResponseObject, error) {
+		return MoveReceivedMessagedefaultJSONResponse{StatusCode: code, Body: errorBody("move_failed", msg)}, nil
+	}
+	if r.Body == nil || (string(r.Body.Folder) != "INBOX" && string(r.Body.Folder) != "Junk") {
+		return fail(400, "folder must be INBOX or Junk")
+	}
+	ws, _, err := s.scope(ctx, string(r.Slug), workspace.RoleMember)
+	if err != nil {
+		return fail(404, "message not found")
+	}
+	msg, err := s.readableMessage(ctx, ws, r.MessageId.String())
+	if err != nil {
+		return fail(404, "message not found")
+	}
+	moved, err := s.inbound.MoveMessage(ctx, msg.MailboxID, msg.ID, string(r.Body.Folder))
+	if err != nil {
+		return nil, err
+	}
+	return MoveReceivedMessage200JSONResponse(receivedMessageToAPI(moved)), nil
 }
