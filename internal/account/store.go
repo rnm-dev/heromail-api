@@ -31,13 +31,13 @@ func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 // userColumns is for single-table queries; userColumnsQualified is for joins,
 // where a bare `id` is ambiguous because identities and sessions have one too.
 const (
-	userColumns          = ` id, email, name, email_verified_at, created_at, updated_at`
-	userColumnsQualified = ` u.id, u.email, u.name, u.email_verified_at, u.created_at, u.updated_at`
+	userColumns          = ` id, email, name, email_verified_at, created_at, updated_at, must_change_password`
+	userColumnsQualified = ` u.id, u.email, u.name, u.email_verified_at, u.created_at, u.updated_at, u.must_change_password`
 )
 
 func scanUser(row pgx.Row) (*User, error) {
 	var u User
-	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.EmailVerifiedAt, &u.CreatedAt, &u.UpdatedAt)
+	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.EmailVerifiedAt, &u.CreatedAt, &u.UpdatedAt, &u.MustChangePassword)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -87,11 +87,11 @@ func (s *Store) PasswordIdentity(ctx context.Context, email string) (*User, []by
 	var u User
 	var hash string
 	err := s.pool.QueryRow(ctx, `
-		SELECT u.id, u.email, u.name, u.email_verified_at, u.created_at, u.updated_at,
+		SELECT u.id, u.email, u.name, u.email_verified_at, u.created_at, u.updated_at, u.must_change_password,
 		       i.password_hash
 		FROM identities i JOIN users u ON u.id = i.user_id
 		WHERE i.provider = 'password' AND i.subject = lower($1)`, email,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.EmailVerifiedAt, &u.CreatedAt, &u.UpdatedAt, &hash)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.EmailVerifiedAt, &u.CreatedAt, &u.UpdatedAt, &u.MustChangePassword, &hash)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil, ErrNotFound
 	}
@@ -186,16 +186,28 @@ func (s *Store) TouchIdentityLogin(ctx context.Context, provider Provider, subje
 // password, and letting a reset link mint one would quietly add a second way
 // into an account the customer deliberately keeps behind their IdP.
 func (s *Store) UpdatePassword(ctx context.Context, userID string, hash []byte) error {
-	tag, err := s.pool.Exec(ctx,
-		`UPDATE identities SET password_hash = $2
-		 WHERE user_id = $1 AND provider = 'password'`, userID, string(hash))
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, `SELECT id FROM users WHERE id=$1 FOR UPDATE`, userID); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx, `UPDATE identities SET password_hash=$2 WHERE user_id=$1 AND provider='password'`, userID, string(hash))
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	return nil
+	if _, err = tx.Exec(ctx, `UPDATE users SET must_change_password=false WHERE id=$1`, userID); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL`, userID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // HasPasswordIdentity reports whether the user can sign in with a password.
@@ -384,11 +396,11 @@ func (s *Store) UserBySessionToken(ctx context.Context, hash []byte) (*User, str
 	var sessionID string
 	var lastSeen *time.Time
 	err := s.pool.QueryRow(ctx, `
-		SELECT u.id, u.email, u.name, u.email_verified_at, u.created_at, u.updated_at,
+		SELECT u.id, u.email, u.name, u.email_verified_at, u.created_at, u.updated_at, u.must_change_password,
 		       s.id, s.last_seen_at
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()`, hash,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.EmailVerifiedAt, &u.CreatedAt, &u.UpdatedAt,
+	).Scan(&u.ID, &u.Email, &u.Name, &u.EmailVerifiedAt, &u.CreatedAt, &u.UpdatedAt, &u.MustChangePassword,
 		&sessionID, &lastSeen)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, "", nil, ErrNotFound

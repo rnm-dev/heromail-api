@@ -345,6 +345,34 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /auth/change-initial-password:
+    post:
+      tags: [auth]
+      operationId: changeInitialPassword
+      summary: Replace an administrator-issued initial password
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, password]
+              properties:
+                current_password: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          description: Password replaced, old sessions revoked and a fresh session issued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Credentials' }
+        default:
+          description: Authentication, validation or state error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /auth/me:
     get:
       tags: [auth]
@@ -1173,11 +1201,12 @@ components:
 
     User:
       type: object
-      required: [id, email, name, email_verified, created_at, updated_at]
+      required: [id, email, name, email_verified, must_change_password, created_at, updated_at]
       properties:
         id: { type: string, format: uuid }
         email: { type: string, format: email }
         name: { type: string }
+        must_change_password: { type: boolean }
         email_verified:
           type: boolean
           description: Derived from `email_verified_at`; the flag the UI wants.

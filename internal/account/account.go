@@ -26,12 +26,13 @@ const (
 
 // User is a person. Identities are how they sign in; a user may have several.
 type User struct {
-	ID              string     `json:"id"`
-	Email           string     `json:"email"`
-	Name            string     `json:"name"`
-	EmailVerifiedAt *time.Time `json:"email_verified_at"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	MustChangePassword bool       `json:"must_change_password"`
+	ID                 string     `json:"id"`
+	Email              string     `json:"email"`
+	Name               string     `json:"name"`
+	EmailVerifiedAt    *time.Time `json:"email_verified_at"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
 // EmailVerified is the flag the UI actually wants.

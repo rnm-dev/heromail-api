@@ -75,6 +75,10 @@ func (s *Service) RequireSession(next http.Handler) http.Handler {
 			return
 		}
 
+		if user.MustChangePassword && r.URL.Path != "/auth/me" && r.URL.Path != "/auth/logout" && r.URL.Path != "/auth/change-initial-password" {
+			writeError(w, http.StatusForbidden, "password_change_required", "Сначала задайте собственный пароль.")
+			return
+		}
 		if lastSeen == nil || time.Since(*lastSeen) > touchInterval {
 			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 3*time.Second)
 			if err := s.store.TouchSession(ctx, sessionID); err != nil {

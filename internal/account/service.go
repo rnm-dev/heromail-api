@@ -205,7 +205,7 @@ func (s *Service) Login(ctx context.Context, req LoginRequest, rc RequestContext
 	}
 
 	s.store.TouchIdentityLogin(ctx, ProviderPassword, normaliseEmail(req.Email))
-	return s.startSession(ctx, user, rc)
+	return s.startPasswordSession(ctx, user.ID, hash, rc)
 }
 
 // SignInWithIdentity is the single entry point for every external provider.
@@ -384,6 +384,20 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string, 
 	}
 	if err != nil {
 		return nil, err
+	}
+
+	existing, err := s.store.UserByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if existing.MustChangePassword {
+		_, oldHash, e := s.store.PasswordIdentity(ctx, existing.Email)
+		if e != nil {
+			return nil, e
+		}
+		if verifyPassword(oldHash, newPassword) {
+			return nil, fmt.Errorf("%w: новый пароль должен отличаться от начального", ErrValidation)
+		}
 	}
 
 	if err := s.store.UpdatePassword(ctx, userID, hash); err != nil {

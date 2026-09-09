@@ -20,13 +20,14 @@ import (
 
 func userToAPI(u *account.User) User {
 	return User{
-		Id:              mustUUID(u.ID),
-		Email:           openapi_types.Email(u.Email),
-		Name:            u.Name,
-		EmailVerified:   u.EmailVerified(),
-		EmailVerifiedAt: u.EmailVerifiedAt,
-		CreatedAt:       u.CreatedAt,
-		UpdatedAt:       u.UpdatedAt,
+		Id:                 mustUUID(u.ID),
+		Email:              openapi_types.Email(u.Email),
+		Name:               u.Name,
+		EmailVerified:      u.EmailVerified(),
+		MustChangePassword: u.MustChangePassword,
+		EmailVerifiedAt:    u.EmailVerifiedAt,
+		CreatedAt:          u.CreatedAt,
+		UpdatedAt:          u.UpdatedAt,
 	}
 }
 

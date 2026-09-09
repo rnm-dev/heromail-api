@@ -66,7 +66,7 @@ func (b *Backend) Login(info *imap.ConnInfo, address, password string) (backend.
  JOIN workspaces w ON w.id=coalesce(m.personal_workspace_id,d.workspace_id)
  JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=coalesce(m.owner_user_id,w.personal_owner_id)
  JOIN identities i ON i.user_id=wm.user_id AND i.provider='password'
- WHERE lower(m.local_part || '@' || d.domain)=$1 AND d.verified_at IS NOT NULL`, address).Scan(&userID, &boxID, &hash)
+ WHERE lower(m.local_part || '@' || d.domain)=$1 AND d.verified_at IS NOT NULL AND NOT EXISTS(SELECT 1 FROM users WHERE id=wm.user_id AND must_change_password)`, address).Scan(&userID, &boxID, &hash)
 	if err != nil {
 		bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
 		return nil, backend.ErrInvalidCredentials
@@ -94,7 +94,7 @@ func (u *User) check(ctx context.Context) error {
 	}
 	// Removal, reassignment, domain suspension and password changes revoke existing connections.
 	var active bool
-	err = u.b.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM mailboxes m JOIN domains d ON d.id=m.domain_id JOIN workspaces w ON w.id=coalesce(m.personal_workspace_id,d.workspace_id) JOIN identities i ON i.user_id=$2 AND i.provider='password' WHERE m.id=$1 AND coalesce(m.owner_user_id,w.personal_owner_id)=$2 AND d.verified_at IS NOT NULL AND i.password_hash=$3)`, u.box, u.id, u.passwordHash).Scan(&active)
+	err = u.b.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM mailboxes m JOIN domains d ON d.id=m.domain_id JOIN workspaces w ON w.id=coalesce(m.personal_workspace_id,d.workspace_id) JOIN identities i ON i.user_id=$2 AND i.provider='password' WHERE m.id=$1 AND coalesce(m.owner_user_id,w.personal_owner_id)=$2 AND d.verified_at IS NOT NULL AND i.password_hash=$3 AND NOT EXISTS(SELECT 1 FROM users WHERE id=$2 AND must_change_password))`, u.box, u.id, u.passwordHash).Scan(&active)
 	if err != nil {
 		return err
 	}

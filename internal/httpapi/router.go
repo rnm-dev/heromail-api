@@ -64,7 +64,7 @@ func Router(server *Server, apiKeys *auth.Authenticator, accounts *account.Servi
 		case strings.HasPrefix(path, "/v1/"):
 			apiKeyGuarded.ServeHTTP(w, r)
 		case path == "/workspaces" || strings.HasPrefix(path, "/workspaces/"),
-			path == "/auth/me", path == "/auth/logout", path == "/messages/search":
+			path == "/auth/change-initial-password", path == "/auth/me", path == "/auth/logout", path == "/messages/search":
 			sessionGuarded.ServeHTTP(w, r)
 		default:
 			// /health and the public /auth/* endpoints.
