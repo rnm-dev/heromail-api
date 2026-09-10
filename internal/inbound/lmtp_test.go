@@ -327,3 +327,43 @@ func TestServerListensOnTCP(t *testing.T) {
 		t.Errorf("greeting %q does not announce LMTP", line)
 	}
 }
+
+// Search is what the mail client runs when someone types in the search box, so
+// it must return the same messages the folder listing does — not a separate
+// shape or a separate view.
+func TestSearchFindsMessagesInTheFolder(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+
+	raw := "From: Viktor <viktor@acme.test>\r\nSubject: Договор аренды\r\n" +
+		"Message-ID: <s1@acme.test>\r\nContent-Type: text/plain\r\n\r\nсумма 50% предоплаты\r\n"
+	if err := h.deliver(t, h.mailbox.Address, raw); err != nil {
+		t.Fatalf("deliver: %v", err)
+	}
+
+	for name, q := range map[string]string{
+		"by subject": "договор",
+		"by sender":  "viktor@acme.test",
+		"by body":    "предоплаты",
+		"other case": "ДОГОВОР",
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := h.store.SearchFolderMessages(ctx, h.mailbox.ID, "INBOX", q, 10, 0)
+			if err != nil {
+				t.Fatalf("search: %v", err)
+			}
+			if len(got) != 1 {
+				t.Fatalf("found %d messages for %q, want 1", len(got), q)
+			}
+		})
+	}
+
+	// % is a wildcard to ILIKE and an ordinary character to a person. Searching
+	// for it must not match everything.
+	if got, _ := h.store.SearchFolderMessages(ctx, h.mailbox.ID, "INBOX", "%", 10, 0); len(got) != 1 {
+		t.Errorf("searching for %% returned %d messages; wildcards must be literal", len(got))
+	}
+	if got, _ := h.store.SearchFolderMessages(ctx, h.mailbox.ID, "INBOX", "нет такого", 10, 0); len(got) != 0 {
+		t.Errorf("a query matching nothing returned %d messages", len(got))
+	}
+}

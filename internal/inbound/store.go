@@ -169,6 +169,40 @@ func (s *Store) ListMessages(ctx context.Context, mailboxID string, limit int, o
 	return s.ListFolderMessages(ctx, mailboxID, "INBOX", limit, skip)
 }
 
+// SearchFolderMessages filters a folder by a free-text query.
+//
+// strpos rather than ILIKE because ILIKE treats %, _ and backslash as
+// wildcards: a search for "50%" would otherwise match far more than it should,
+// and escaping user input into a pattern is the kind of thing that is wrong
+// once and then wrong forever.
+//
+// Subject, sender and body are searched together — someone looking for a
+// message remembers whichever of those stuck, and asking them which field it
+// was is a worse product than one query over all three.
+func (s *Store) SearchFolderMessages(ctx context.Context, mailboxID, folder, query string, limit, skip int) ([]Message, error) {
+	rows, err := s.pool.Query(ctx, `
+ SELECT`+messageColumns+`
+ FROM messages msg
+ WHERE msg.mailbox_id=$1 AND msg.folder=$4
+   AND strpos(lower(concat_ws(' ', msg.subject, msg.from_addr, msg.from_name, msg.text_body)), lower($5)) > 0
+ ORDER BY msg.received_at DESC, msg.id DESC LIMIT $2 OFFSET $3`,
+		mailboxID, limit, skip, folder, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]Message, 0)
+	for rows.Next() {
+		m, err := scanMessage(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *m)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) ListFolderMessages(ctx context.Context, mailboxID, folder string, limit, skip int) ([]Message, error) {
 	rows, err := s.pool.Query(ctx, `
  SELECT`+messageColumns+`

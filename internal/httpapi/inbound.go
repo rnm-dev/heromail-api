@@ -147,7 +147,19 @@ func (s *Server) ListMessages(ctx context.Context, request ListMessagesRequestOb
 	if folder != "INBOX" && folder != "Junk" {
 		return ListMessages404JSONResponse{NotFoundJSONResponse(errorBody("not_found", "folder not found"))}, nil
 	}
-	msgs, err := s.inbound.ListFolderMessages(ctx, box.ID, folder, limit, offset)
+	// A blank q is not a search for nothing — it is the unfiltered folder, which
+	// is what the mail client shows when the search box is emptied.
+	search := ""
+	if request.Params.Q != nil {
+		search = strings.TrimSpace(*request.Params.Q)
+	}
+
+	var msgs []inbound.Message
+	if search != "" {
+		msgs, err = s.inbound.SearchFolderMessages(ctx, box.ID, folder, search, limit, offset)
+	} else {
+		msgs, err = s.inbound.ListFolderMessages(ctx, box.ID, folder, limit, offset)
+	}
 	if err != nil {
 		log.Printf("list messages: %v", err)
 		return nil, err
