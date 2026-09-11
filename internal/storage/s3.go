@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -36,11 +37,19 @@ type Store interface {
 type S3Store struct {
 	client *s3.Client
 	bucket string
+	prefix string
 }
 
 // NewFromEnv builds a Store from S3_BUCKET, S3_REGION, and optionally
 // S3_ENDPOINT (for MinIO, R2, or anything that is not AWS itself),
-// S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY, and S3_FORCE_PATH_STYLE.
+// S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY, S3_FORCE_PATH_STYLE and
+// S3_PREFIX.
+//
+// S3_PREFIX lets development and production share one bucket without being
+// able to touch each other's objects. It is deliberately applied here rather
+// than baked into the keys the database stores: a row records where the
+// object is within a deployment, and moving a deployment to a different
+// prefix must not require rewriting every row.
 //
 // Returns ErrNotConfigured when S3_BUCKET is empty, which is the expected
 // state until credentials are filled in — callers decide whether that is
@@ -82,13 +91,25 @@ func NewFromEnv(ctx context.Context) (*S3Store, error) {
 		}
 	})
 
-	return &S3Store{client: client, bucket: bucket}, nil
+	// A prefix names a directory, so tolerate it being given with or without
+	// the trailing slash. "dev" and "dev/" must not be two different places.
+	prefix := os.Getenv("S3_PREFIX")
+	if prefix != "" {
+		prefix = strings.TrimSuffix(prefix, "/") + "/"
+	}
+
+	return &S3Store{client: client, bucket: bucket, prefix: prefix}, nil
 }
+
+// path places a caller's key inside this deployment's prefix. Every request
+// to the bucket goes through it, so no code path can escape the prefix by
+// forgetting to prepend it.
+func (s *S3Store) path(key string) string { return s.prefix + key }
 
 func (s *S3Store) Put(ctx context.Context, key string, r io.Reader, size int64, contentType string) error {
 	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:        aws.String(s.bucket),
-		Key:           aws.String(key),
+		Key:           aws.String(s.path(key)),
 		Body:          r,
 		ContentLength: aws.Int64(size),
 		ContentType:   aws.String(contentType),
@@ -102,7 +123,7 @@ func (s *S3Store) Put(ctx context.Context, key string, r io.Reader, size int64, 
 func (s *S3Store) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
-		Key:    aws.String(key),
+		Key:    aws.String(s.path(key)),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("storage: get %s: %w", key, err)
@@ -113,7 +134,7 @@ func (s *S3Store) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 func (s *S3Store) Delete(ctx context.Context, key string) error {
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(s.bucket),
-		Key:    aws.String(key),
+		Key:    aws.String(s.path(key)),
 	})
 	if err != nil {
 		return fmt.Errorf("storage: delete %s: %w", key, err)
