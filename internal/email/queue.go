@@ -156,6 +156,13 @@ func (w *Worker) Deliver(ctx context.Context, emailID string, retried, maxRetry 
 		return w.giveUpOrRetry(ctx, claimed, retried, maxRetry, fmt.Errorf("resolve DKIM key: %w", err))
 	}
 
+	headers := map[string]string{}
+	if claimed.InReplyTo != "" {
+		headers["In-Reply-To"] = claimed.InReplyTo
+	}
+	if claimed.References != "" {
+		headers["References"] = claimed.References
+	}
 	messageID, sendErr := w.sender.Send(ctx, provider.Message{
 		From:        claimed.FromAddr,
 		To:          claimed.ToAddrs,
@@ -166,6 +173,7 @@ func (w *Worker) Deliver(ctx context.Context, emailID string, retried, maxRetry 
 		TextBody:    deref(claimed.TextBody),
 		Attachments: attachments,
 		DKIM:        dkim,
+		Headers:     headers,
 	})
 	if sendErr == nil {
 		if _, err := w.store.MarkSent(ctx, claimed.ID, messageID); err != nil {

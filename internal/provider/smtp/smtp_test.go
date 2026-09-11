@@ -313,3 +313,15 @@ func TestCopiesAndHiddenRecipients(t *testing.T) {
 		t.Fatalf("Cc/Bcc MIME privacy failure: %s", env.data)
 	}
 }
+
+func TestSendPreservesReplyThreadHeaders(t *testing.T) {
+	s, fake := newTestSender(t)
+	_, err := s.Send(t.Context(), provider.Message{From: "me@example.test", To: []string{"you@example.test"}, TextBody: "reply", Headers: map[string]string{"In-Reply-To": "<parent@example.test>", "References": "<root@example.test> <parent@example.test>"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := fake.received()[0].data
+	if headerValue(data, "In-Reply-To") != "<parent@example.test>" || headerValue(data, "References") != "<root@example.test> <parent@example.test>" {
+		t.Fatal("reply headers changed on SMTP wire")
+	}
+}

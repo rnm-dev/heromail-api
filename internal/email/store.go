@@ -34,14 +34,14 @@ func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 const selectColumns = `
 	id, workspace_id, from_addr, to_addrs, subject, html_body, text_body,
 	status, provider_message_id, idempotency_key, attempts, last_error,
-	created_at, updated_at, cc_addrs, bcc_addrs`
+	created_at, updated_at, cc_addrs, bcc_addrs, in_reply_to, reply_references`
 
 func scanEmail(row pgx.Row) (*Email, error) {
 	var e Email
 	err := row.Scan(
 		&e.ID, &e.WorkspaceID, &e.FromAddr, &e.ToAddrs, &e.Subject,
 		&e.HTMLBody, &e.TextBody, &e.Status, &e.ProviderMessageID,
-		&e.IdempotencyKey, &e.Attempts, &e.LastError, &e.CreatedAt, &e.UpdatedAt, &e.CcAddrs, &e.BccAddrs,
+		&e.IdempotencyKey, &e.Attempts, &e.LastError, &e.CreatedAt, &e.UpdatedAt, &e.CcAddrs, &e.BccAddrs, &e.InReplyTo, &e.References,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -63,6 +63,8 @@ type CreateParams struct {
 	HTMLBody       string
 	TextBody       string
 	IdempotencyKey string
+	InReplyTo      string
+	References     string
 }
 
 // Create inserts the email as queued together with its first event, in one
@@ -75,10 +77,10 @@ func (s *Store) Create(ctx context.Context, p CreateParams) (*Email, error) {
 	defer tx.Rollback(ctx)
 
 	email, err := scanEmail(tx.QueryRow(ctx, `
-		INSERT INTO emails (workspace_id, from_addr, to_addrs, subject, html_body, text_body, idempotency_key, cc_addrs, bcc_addrs)
-		VALUES ($1, $2, $3, $4, nullif($5, ''), nullif($6, ''), nullif($7, ''), coalesce($8::text[], '{}'), coalesce($9::text[], '{}'))
+		INSERT INTO emails (workspace_id, from_addr, to_addrs, subject, html_body, text_body, idempotency_key, cc_addrs, bcc_addrs, in_reply_to, reply_references)
+		VALUES ($1, $2, $3, $4, nullif($5, ''), nullif($6, ''), nullif($7, ''), coalesce($8::text[], '{}'), coalesce($9::text[], '{}'), $10, $11)
 		RETURNING`+selectColumns,
-		p.WorkspaceID, p.FromAddr, p.ToAddrs, p.Subject, p.HTMLBody, p.TextBody, p.IdempotencyKey, p.CcAddrs, p.BccAddrs,
+		p.WorkspaceID, p.FromAddr, p.ToAddrs, p.Subject, p.HTMLBody, p.TextBody, p.IdempotencyKey, p.CcAddrs, p.BccAddrs, p.InReplyTo, p.References,
 	))
 	if err != nil {
 		var pgErr *pgconn.PgError

@@ -384,6 +384,10 @@ func (s *Server) SendEmail(ctx context.Context, request SendEmailRequestObject) 
 		return SendEmail400JSONResponse{BadRequestJSONResponse(errorBody("invalid_json", "a JSON body is required"))}, nil
 	}
 
+	if request.Body.ReplyToMessageId != nil {
+		return SendEmail400JSONResponse{BadRequestJSONResponse(errorBody("invalid_request", "reply_to_message_id requires session sending"))}, nil
+	}
+
 	// Per workspace, because the hazard is multi-tenant: one abusive tenant
 	// burns the sending reputation every other tenant depends on.
 	if res := s.allow(ctx, workspaceID, sendQuota()...); !res.Allowed {

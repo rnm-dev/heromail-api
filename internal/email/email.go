@@ -49,6 +49,9 @@ type Email struct {
 	HTMLBody    *string  `json:"html,omitempty"`
 	TextBody    *string  `json:"text,omitempty"`
 
+	InReplyTo  string `json:"-"`
+	References string `json:"-"`
+
 	Status            Status  `json:"status"`
 	ProviderMessageID *string `json:"provider_message_id"`
 	IdempotencyKey    *string `json:"idempotency_key,omitempty"`

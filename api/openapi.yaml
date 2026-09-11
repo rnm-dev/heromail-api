@@ -845,6 +845,13 @@ paths:
           in: query
           required: false
           schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: q
+          in: query
+          required: false
+          description: |
+            Free-text filter over subject, sender and body. Absent or blank
+            returns the folder unfiltered.
+          schema: { type: string, maxLength: 200 }
         - name: offset
           in: query
           schema: { type: integer, minimum: 0, default: 0 }
@@ -1500,6 +1507,17 @@ components:
         envelope_from: { type: string }
         envelope_to: { type: string }
         message_id: { type: string, nullable: true }
+        reply_to:
+          type: array
+          items: { type: string }
+          description: Parsed Reply-To addresses, falling back to From; detail only.
+        inline_media:
+          type: object
+          additionalProperties: { type: string }
+          description: Content-ID to safe media data URL; authorized detail only.
+        inline_media_omitted:
+          type: boolean
+          description: Some embedded parts exceeded limits or use unsupported media types.
         from: { type: string, nullable: true }
         from_name: { type: string, nullable: true }
         subject: { type: string }
@@ -1563,6 +1581,10 @@ components:
         subject: { type: string, maxLength: 998 }
         html: { type: string }
         text: { type: string }
+        reply_to_message_id:
+          type: string
+          format: uuid
+          description: Session sending only; an accessible received message to reply to.
         attachments:
           type: array
           maxItems: 20

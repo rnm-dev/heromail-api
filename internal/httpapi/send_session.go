@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/rnm/heromail/backend/internal/email"
+	"github.com/rnm/heromail/backend/internal/inbound"
 	"github.com/rnm/heromail/backend/internal/workspace"
 )
 
@@ -75,8 +76,21 @@ func (s *Server) SendWorkspaceEmail(ctx context.Context, request SendWorkspaceEm
 		}
 	}
 
+	var reply inbound.Presentation
+	if request.Body.ReplyToMessageId != nil {
+		original, err := s.readableMessage(ctx, workspaceID, request.Body.ReplyToMessageId.String())
+		if err != nil {
+			return SendWorkspaceEmail404JSONResponse{NotFoundJSONResponse(errorBody("not_found", "original message not found"))}, nil
+		}
+		reply, err = s.inbound.Presentation(ctx, original.MailboxID, original.ID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	msg, err := s.emails.Send(ctx, workspaceID, idempotencyKey, email.SendRequest{
 		From:          from,
+		InReplyTo:     reply.InReplyTo,
+		References:    reply.References,
 		To:            to,
 		Cc:            emailAddresses(request.Body.Cc),
 		Bcc:           emailAddresses(request.Body.Bcc),

@@ -76,13 +76,15 @@ func envBytes(name string, fallback int64) int64 {
 // each body is required only when the other is absent, so exactly one is
 // enough and neither is not. This mirrors the CHECK constraint on the table.
 type SendRequest struct {
-	From    string   `json:"from"    validate:"required,email"`
-	To      []string `json:"to"      validate:"required,min=1,max=50,dive,required,email"`
-	Cc      []string `json:"cc" validate:"max=50,dive,required,email"`
-	Bcc     []string `json:"bcc" validate:"max=50,dive,required,email"`
-	Subject string   `json:"subject" validate:"max=998"`
-	HTML    string   `json:"html"    validate:"required_without=Text"`
-	Text    string   `json:"text"    validate:"required_without=HTML"`
+	InReplyTo  string   `json:"-" validate:"max=900"`
+	References string   `json:"-" validate:"max=900"`
+	From       string   `json:"from"    validate:"required,email"`
+	To         []string `json:"to"      validate:"required,min=1,max=50,dive,required,email"`
+	Cc         []string `json:"cc" validate:"max=50,dive,required,email"`
+	Bcc        []string `json:"bcc" validate:"max=50,dive,required,email"`
+	Subject    string   `json:"subject" validate:"max=998"`
+	HTML       string   `json:"html"    validate:"required_without=Text"`
+	Text       string   `json:"text"    validate:"required_without=HTML"`
 	// AttachmentIDs are ids returned by UploadAttachment, still unattached.
 	AttachmentIDs []string `json:"-" validate:"max=20,dive,uuid"`
 }
@@ -173,7 +175,7 @@ func (s *Service) Send(ctx context.Context, workspaceID, idempotencyKey string, 
 		existing, err := s.store.ByIdempotencyKey(ctx, workspaceID, idempotencyKey)
 		switch {
 		case err == nil:
-			if existing.FromAddr != req.From || !slices.Equal(existing.ToAddrs, req.To) || !slices.Equal(existing.CcAddrs, req.Cc) || !slices.Equal(existing.BccAddrs, req.Bcc) || existing.Subject != req.Subject || deref(existing.TextBody) != req.Text || deref(existing.HTMLBody) != req.HTML {
+			if existing.InReplyTo != req.InReplyTo || existing.References != req.References || existing.FromAddr != req.From || !slices.Equal(existing.ToAddrs, req.To) || !slices.Equal(existing.CcAddrs, req.Cc) || !slices.Equal(existing.BccAddrs, req.Bcc) || existing.Subject != req.Subject || deref(existing.TextBody) != req.Text || deref(existing.HTMLBody) != req.HTML {
 				return nil, fmt.Errorf("%w: idempotency key belongs to a different message", ErrValidation)
 			}
 			attached, err := s.store.AttachmentsByEmailID(ctx, existing.ID)
@@ -235,6 +237,8 @@ func (s *Service) Send(ctx context.Context, workspaceID, idempotencyKey string, 
 		Subject:        req.Subject,
 		HTMLBody:       req.HTML,
 		TextBody:       req.Text,
+		InReplyTo:      req.InReplyTo,
+		References:     req.References,
 		IdempotencyKey: idempotencyKey,
 	})
 	if errors.Is(err, ErrDuplicateIdempotencyKey) {

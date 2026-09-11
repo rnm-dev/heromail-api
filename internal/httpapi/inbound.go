@@ -183,7 +183,15 @@ func (s *Server) GetMessage(ctx context.Context, request GetMessageRequestObject
 		// Another workspace's message lands here too, which is the point.
 		return GetMessage404JSONResponse{NotFoundJSONResponse(errorBody("not_found", "message not found"))}, nil
 	}
-	return GetMessage200JSONResponse(receivedMessageToAPI(msg)), nil
+	presentation, err := s.inbound.Presentation(ctx, msg.MailboxID, msg.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := receivedMessageToAPI(msg)
+	out.ReplyTo = &presentation.ReplyTo
+	out.InlineMedia = &presentation.InlineMedia
+	out.InlineMediaOmitted = &presentation.Omitted
+	return GetMessage200JSONResponse(out), nil
 }
 
 func (s *Server) MarkMessageRead(ctx context.Context, request MarkMessageReadRequestObject) (MarkMessageReadResponseObject, error) {
