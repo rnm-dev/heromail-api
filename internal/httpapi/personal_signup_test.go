@@ -11,7 +11,7 @@ import (
 )
 
 func TestExistingPersonalMailboxIsolation(t *testing.T) {
-	h := newGuardedHarness(t)
+	h := newHarness(t)
 	ctx := t.Context()
 	operator, _, _ := h.registerUser("personal-operator")
 	serviceWS := h.workspaceFor(operator, "personal-service")

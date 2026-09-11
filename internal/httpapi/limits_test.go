@@ -111,7 +111,9 @@ func TestSendIsRateLimitedPerWorkspace(t *testing.T) {
 	// test can lower it instead of sending sixty messages.
 	t.Setenv("SEND_LIMIT_PER_MINUTE", "3")
 
-	const body = `{"from":"noreply@acme.com","to":["viktor@acme.com"],"text":"hello"}`
+	// Each workspace sends as a domain it owns; the quota, not the sender
+	// check, has to be what refuses the fourth message.
+	body := fmt.Sprintf(`{"from":%q,"to":["viktor@acme.com"],"text":"hello"}`, h.senderFor(t, workspaceID))
 	for i := 1; i <= 3; i++ {
 		if rec := h.do(http.MethodPost, "/v1/emails", body, key); rec.Code != http.StatusAccepted {
 			t.Fatalf("message %d: status %d, want 202", i, rec.Code)
@@ -131,7 +133,8 @@ func TestSendIsRateLimitedPerWorkspace(t *testing.T) {
 	otherToken, _, _ := h.registerUser("limit-send-other")
 	otherWorkspace := h.workspaceFor(otherToken, "limit-send-other")
 	otherKey := h.apiKeyFor(otherWorkspace)
-	if rec := h.do(http.MethodPost, "/v1/emails", body, otherKey); rec.Code != http.StatusAccepted {
+	otherBody := fmt.Sprintf(`{"from":%q,"to":["viktor@acme.com"],"text":"hello"}`, h.senderFor(t, otherWorkspace))
+	if rec := h.do(http.MethodPost, "/v1/emails", otherBody, otherKey); rec.Code != http.StatusAccepted {
 		t.Errorf("another workspace was refused (%d); the quota is not per workspace", rec.Code)
 	}
 }

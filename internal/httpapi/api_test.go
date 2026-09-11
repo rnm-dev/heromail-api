@@ -197,7 +197,7 @@ func newHarness(t *testing.T) *harness {
 		t.Fatalf("sealer: %v", err)
 	}
 	domains := maildomain.NewService(maildomain.NewStore(pool), dns, sealer, maildomain.Config{
-		SPFInclude:    "include:spf.heromail.local",
+		SPFInclude:    "include:spf.heromail.kz",
 		DMARCReportTo: "dmarc@heromail.local",
 	})
 	// The limiter is real when Redis is configured: rate limiting is not worth
@@ -214,7 +214,10 @@ func newHarness(t *testing.T) *harness {
 	emailStore := email.NewStore(pool)
 	server := NewServer(pool,
 		accounts,
-		email.NewService(emailStore, queue, blobs),
+		// The guard is on here for the same reason main.go turns it on: a
+		// harness that builds the service differently from production has a
+		// hole exactly the size of that difference.
+		email.NewService(emailStore, queue, blobs).WithDomainGuard(domains),
 		workspace.NewService(workspace.NewStore(pool)),
 		domains,
 		inbound.NewStore(pool),
@@ -665,7 +668,8 @@ func TestSendEmailIsQueuedThenDelivered(t *testing.T) {
 	key := h.apiKeyFor(workspaceID)
 	h.mail.reset()
 
-	const body = `{"from":"noreply@acme.com","to":["viktor@acme.com"],"subject":"Hi","text":"hello"}`
+	body := fmt.Sprintf(`{"from":%q,"to":["viktor@acme.com"],"subject":"Hi","text":"hello"}`,
+		h.senderFor(t, workspaceID))
 
 	rec := h.do(http.MethodPost, "/v1/emails", body, key)
 	if rec.Code != http.StatusAccepted {
@@ -726,7 +730,8 @@ func TestSendEmailIsIdempotent(t *testing.T) {
 	key := h.apiKeyFor(workspaceID)
 	h.mail.reset()
 
-	const body = `{"from":"noreply@acme.com","to":["viktor@acme.com"],"text":"hello"}`
+	body := fmt.Sprintf(`{"from":%q,"to":["viktor@acme.com"],"text":"hello"}`,
+		h.senderFor(t, workspaceID))
 
 	first := h.doWithHeader(http.MethodPost, "/v1/emails", body, key, "Idempotency-Key", "order-42")
 	second := h.doWithHeader(http.MethodPost, "/v1/emails", body, key, "Idempotency-Key", "order-42")
@@ -764,7 +769,7 @@ func TestWorkerRetriesThenGivesUp(t *testing.T) {
 	h.mail.err = errors.New("connection refused")
 
 	rec := h.do(http.MethodPost, "/v1/emails",
-		`{"from":"noreply@acme.com","to":["viktor@acme.com"],"text":"hello"}`, key)
+		fmt.Sprintf(`{"from":%q,"to":["viktor@acme.com"],"text":"hello"}`, h.senderFor(t, workspaceID)), key)
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("send: status %d, want 202", rec.Code)
 	}
@@ -806,7 +811,7 @@ func TestWorkerIgnoresAnAlreadySentMessage(t *testing.T) {
 	h.mail.reset()
 
 	rec := h.do(http.MethodPost, "/v1/emails",
-		`{"from":"noreply@acme.com","to":["viktor@acme.com"],"text":"hello"}`, key)
+		fmt.Sprintf(`{"from":%q,"to":["viktor@acme.com"],"text":"hello"}`, h.senderFor(t, workspaceID)), key)
 	var queued struct {
 		ID string `json:"id"`
 	}
@@ -828,7 +833,7 @@ func TestEmailScopingAndValidation(t *testing.T) {
 	keyA := h.apiKeyFor(workspaceA)
 
 	rec := h.do(http.MethodPost, "/v1/emails",
-		`{"from":"noreply@acme.com","to":["viktor@acme.com"],"text":"hello"}`, keyA)
+		fmt.Sprintf(`{"from":%q,"to":["viktor@acme.com"],"text":"hello"}`, h.senderFor(t, workspaceA)), keyA)
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("send: status %d, want 202", rec.Code)
 	}

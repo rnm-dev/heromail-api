@@ -42,8 +42,10 @@ type Record struct {
 // Config is what the expected record values depend on: our own sending
 // infrastructure, which the customer's DNS has to authorise.
 type Config struct {
-	// SPFInclude is the mechanism authorising our senders, e.g.
-	// "include:spf.heromail.dev" or "ip4:203.0.113.10".
+	// SPFInclude is the mechanism authorising our senders. Prefer an
+	// include: over a bare ip4:. Customers publish this once; when our
+	// sending address changes we edit spf.heromail.kz and every customer
+	// domain follows, instead of asking each of them to edit DNS again.
 	SPFInclude string
 	// DMARCReportTo receives aggregate reports.
 	DMARCReportTo string
@@ -51,7 +53,7 @@ type Config struct {
 
 func (c Config) withDefaults() Config {
 	if c.SPFInclude == "" {
-		c.SPFInclude = "include:spf.heromail.local"
+		c.SPFInclude = "include:spf.heromail.kz"
 	}
 	if c.DMARCReportTo == "" {
 		c.DMARCReportTo = "dmarc@heromail.local"

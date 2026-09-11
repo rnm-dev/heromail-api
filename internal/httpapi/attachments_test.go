@@ -32,7 +32,8 @@ func TestUploadAttachmentThenSendDeliversIt(t *testing.T) {
 		t.Errorf("size_bytes = %d, want %d", uploaded.SizeBytes, len("%PDF-1.4 fake invoice bytes"))
 	}
 
-	body := fmt.Sprintf(`{"from":"noreply@acme.com","to":["viktor@acme.com"],"text":"see attached","attachments":[%q]}`, uploaded.ID)
+	body := fmt.Sprintf(`{"from":%q,"to":["viktor@acme.com"],"text":"see attached","attachments":[%q]}`,
+		h.senderFor(t, workspaceID), uploaded.ID)
 	sent := h.do(http.MethodPost, "/v1/emails", body, key)
 	if sent.Code != http.StatusAccepted {
 		t.Fatalf("send: status %d, body %s", sent.Code, sent.Body)
@@ -75,8 +76,8 @@ func TestSendWithUnknownAttachmentIsRejected(t *testing.T) {
 	workspaceID := h.workspaceFor(token, "attach-missing")
 	key := h.apiKeyFor(workspaceID)
 
-	body := `{"from":"noreply@acme.com","to":["viktor@acme.com"],"text":"hi",
-	          "attachments":["00000000-0000-0000-0000-000000000000"]}`
+	body := fmt.Sprintf(`{"from":%q,"to":["viktor@acme.com"],"text":"hi",
+	          "attachments":["00000000-0000-0000-0000-000000000000"]}`, h.senderFor(t, workspaceID))
 	rec := h.do(http.MethodPost, "/v1/emails", body, key)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status %d, want 400; body %s", rec.Code, rec.Body)
@@ -100,7 +101,10 @@ func TestAttachmentFromAnotherWorkspaceIsRejected(t *testing.T) {
 	}
 	json.Unmarshal(rec.Body.Bytes(), &uploaded)
 
-	body := fmt.Sprintf(`{"from":"noreply@other.com","to":["v@other.com"],"text":"hi","attachments":[%q]}`, uploaded.ID)
+	// Workspace B sends as its own verified domain: the only thing left that
+	// can fail is the attachment belonging to workspace A.
+	body := fmt.Sprintf(`{"from":%q,"to":["v@other.com"],"text":"hi","attachments":[%q]}`,
+		h.senderFor(t, workspaceB), uploaded.ID)
 	sent := h.do(http.MethodPost, "/v1/emails", body, keyB)
 	if sent.Code != http.StatusBadRequest {
 		t.Fatalf("status %d, want 400 — another workspace's attachment must not be usable; body %s", sent.Code, sent.Body)
@@ -119,7 +123,8 @@ func TestAttachmentCannotBeReused(t *testing.T) {
 	}
 	json.Unmarshal(rec.Body.Bytes(), &uploaded)
 
-	body := fmt.Sprintf(`{"from":"noreply@acme.com","to":["v@acme.com"],"text":"first","attachments":[%q]}`, uploaded.ID)
+	body := fmt.Sprintf(`{"from":%q,"to":["v@acme.com"],"text":"first","attachments":[%q]}`,
+		h.senderFor(t, workspaceID), uploaded.ID)
 	first := h.do(http.MethodPost, "/v1/emails", body, key)
 	if first.Code != http.StatusAccepted {
 		t.Fatalf("first send: status %d, body %s", first.Code, first.Body)

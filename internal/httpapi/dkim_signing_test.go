@@ -70,6 +70,24 @@ func TestSentMailIsDKIMSignedForAVerifiedDomain(t *testing.T) {
 	}
 }
 
+// queueEmail inserts a message the way the API would, bypassing the HTTP
+// layer. The sender guard now refuses an unverified From at the boundary, so
+// the only way to test what the signer does with one is to put the row in
+// directly. That is the point: the signer is the second line of defence and
+// has to hold on its own if the first is ever bypassed or removed.
+func (h *harness) queueEmail(t *testing.T, workspaceID, from string) string {
+	t.Helper()
+	var id string
+	err := h.pool.QueryRow(t.Context(),
+		`INSERT INTO emails (workspace_id, from_addr, to_addrs, text_body)
+		 VALUES ($1, $2, ARRAY['viktor@acme.test'], 'hi') RETURNING id`,
+		workspaceID, from).Scan(&id)
+	if err != nil {
+		t.Fatalf("queue email directly: %v", err)
+	}
+	return id
+}
+
 // TestSentMailIsUnsignedForAnUnverifiedDomain: claiming a domain generates a
 // key immediately, but ownership is not proven yet — signing with it would
 // let anyone who merely typed a domain name into our UI mint DKIM signatures
@@ -88,17 +106,14 @@ func TestSentMailIsUnsignedForAnUnverifiedDomain(t *testing.T) {
 	key := h.apiKeyFor(workspaceID)
 	h.mail.reset()
 
+	// First line of defence: the API refuses the send outright.
 	body := fmt.Sprintf(`{"from":"noreply@%s","to":["viktor@acme.test"],"text":"hi"}`, name)
-	sent := h.do(http.MethodPost, "/v1/emails", body, key)
-	if sent.Code != http.StatusAccepted {
-		t.Fatalf("send: %d %s", sent.Code, sent.Body)
+	if sent := h.do(http.MethodPost, "/v1/emails", body, key); sent.Code != http.StatusBadRequest {
+		t.Fatalf("send: %d %s, want 400 — an unverified domain must not be a usable sender", sent.Code, sent.Body)
 	}
-	var queued struct {
-		ID string `json:"id"`
-	}
-	json.Unmarshal(sent.Body.Bytes(), &queued)
 
-	h.runWorker(queued.ID)
+	// Second line: even if such a message reaches the worker, it goes unsigned.
+	h.runWorker(h.queueEmail(t, workspaceID, "noreply@"+name))
 
 	msg, ok := h.mail.last()
 	if !ok {
@@ -109,10 +124,9 @@ func TestSentMailIsUnsignedForAnUnverifiedDomain(t *testing.T) {
 	}
 }
 
-// TestSentMailIsUnsignedForAnUnclaimedDomain: sending From a domain the
-// workspace never registered at all must not crash or block delivery — it
-// just sends unsigned, exactly as permissive as the From address itself
-// already is today.
+// TestSentMailIsUnsignedForAnUnclaimedDomain: a domain the workspace never
+// registered has no key at all. The lookup must come back empty and the
+// message go out unsigned rather than the worker failing on a missing key.
 func TestSentMailIsUnsignedForAnUnclaimedDomain(t *testing.T) {
 	h := newHarness(t)
 	token, _, _ := h.registerUser("dkim-unclaimed")
@@ -121,16 +135,10 @@ func TestSentMailIsUnsignedForAnUnclaimedDomain(t *testing.T) {
 	h.mail.reset()
 
 	body := `{"from":"noreply@never-claimed.test","to":["viktor@acme.test"],"text":"hi"}`
-	sent := h.do(http.MethodPost, "/v1/emails", body, key)
-	if sent.Code != http.StatusAccepted {
-		t.Fatalf("send: %d %s", sent.Code, sent.Body)
+	if sent := h.do(http.MethodPost, "/v1/emails", body, key); sent.Code != http.StatusBadRequest {
+		t.Fatalf("send: %d %s, want 400 — an unclaimed domain must not be a usable sender", sent.Code, sent.Body)
 	}
-	var queued struct {
-		ID string `json:"id"`
-	}
-	json.Unmarshal(sent.Body.Bytes(), &queued)
-
-	h.runWorker(queued.ID)
+	h.runWorker(h.queueEmail(t, workspaceID, "noreply@never-claimed.test"))
 
 	msg, ok := h.mail.last()
 	if !ok {

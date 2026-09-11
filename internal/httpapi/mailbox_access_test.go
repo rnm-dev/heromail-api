@@ -9,7 +9,7 @@ import (
 )
 
 func TestPrivateMailboxAccess(t *testing.T) {
-	h := newGuardedHarness(t)
+	h := newHarness(t)
 	ctx := t.Context()
 	owner, _, _ := h.registerUser("private-manager")
 	employee, employeeID, _ := h.registerUser("private-employee")

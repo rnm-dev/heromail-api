@@ -12,7 +12,7 @@ import (
 )
 
 func TestComposePipeline(t *testing.T) {
-	h := newGuardedHarness(t)
+	h := newHarness(t)
 	owner, _, _ := h.registerUser("compose-owner")
 	member, memberID, _ := h.registerUser("compose-member")
 	outsider, _, _ := h.registerUser("compose-outsider")

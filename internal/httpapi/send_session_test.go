@@ -6,11 +6,6 @@ import (
 	"net/http"
 	"testing"
 	"time"
-
-	"github.com/rnm/heromail/backend/internal/auth"
-	"github.com/rnm/heromail/backend/internal/email"
-	"github.com/rnm/heromail/backend/internal/inbound"
-	"github.com/rnm/heromail/backend/internal/workspace"
 )
 
 // verifiedDomainFor claims a domain for the workspace and marks it verified,
@@ -87,23 +82,17 @@ func TestSessionSendIsScopedToMembership(t *testing.T) {
 	}
 }
 
-// The domain guard is wired in main.go, not in the harness, so these build the
-// service the way production does rather than trusting that they match. That
-// distinction is exactly what let a unix-socket default reach production
-// unnoticed once already.
-func newGuardedHarness(t *testing.T) *harness {
+// senderFor is the address a workspace is actually allowed to send as. Tests
+// that are about something else — attachments, idempotency, rate limits — use
+// it so they exercise the same sender check production applies, instead of
+// passing only because enforcement happened to be off.
+func (h *harness) senderFor(t *testing.T, workspaceID string) string {
 	t.Helper()
-	h := newHarness(t)
-
-	guarded := email.NewService(email.NewStore(h.pool), h.queue, h.blobs).WithDomainGuard(h.domains)
-	server := NewServer(h.pool, h.accounts, guarded,
-		workspace.NewService(workspace.NewStore(h.pool)), h.domains, inbound.NewStore(h.pool), h.limiter)
-	h.handler = Router(server, auth.New(h.pool), h.accounts)
-	return h
+	return "noreply@" + h.verifiedDomainFor(t, workspaceID)
 }
 
 func TestSendRefusesAnUnverifiedSenderDomain(t *testing.T) {
-	h := newGuardedHarness(t)
+	h := newHarness(t)
 	token, _, _ := h.registerUser("guard-refuse")
 	workspaceID := h.workspaceFor(token, "guard-refuse")
 	key := h.apiKeyFor(workspaceID)
@@ -117,7 +106,7 @@ func TestSendRefusesAnUnverifiedSenderDomain(t *testing.T) {
 }
 
 func TestSendAllowsAVerifiedSenderDomain(t *testing.T) {
-	h := newGuardedHarness(t)
+	h := newHarness(t)
 	token, _, _ := h.registerUser("guard-allow")
 	workspaceID := h.workspaceFor(token, "guard-allow")
 	key := h.apiKeyFor(workspaceID)
@@ -131,7 +120,7 @@ func TestSendAllowsAVerifiedSenderDomain(t *testing.T) {
 
 // One workspace verifying a domain must not let another send as it.
 func TestSendRefusesAnotherWorkspacesDomain(t *testing.T) {
-	h := newGuardedHarness(t)
+	h := newHarness(t)
 
 	ownerToken, _, _ := h.registerUser("guard-owner")
 	ownerWorkspace := h.workspaceFor(ownerToken, "guard-owner")

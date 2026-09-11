@@ -200,7 +200,7 @@ func TestVerifyReportsPerRecordStatus(t *testing.T) {
 	// Publish ownership and SPF, leave DKIM and DMARC absent.
 	by := recordsByPurpose(d)
 	h.dns.publish(by["ownership"][0].Name, by["ownership"][0].Value)
-	h.dns.publish(name, "v=spf1 include:spf.heromail.local ~all")
+	h.dns.publish(name, "v=spf1 include:spf.heromail.kz ~all")
 
 	rec := h.do(http.MethodPost, base+"/"+name+"/verify", "", token)
 	if rec.Code != http.StatusOK {
@@ -231,7 +231,7 @@ func TestSpfMatchesMergedPolicy(t *testing.T) {
 
 	// A customer who already sends from elsewhere merges our mechanism in.
 	// Demanding a byte-for-byte match would call this working setup broken.
-	h.dns.publish(name, "v=spf1 include:_spf.google.com include:spf.heromail.local -all")
+	h.dns.publish(name, "v=spf1 include:_spf.google.com include:spf.heromail.kz -all")
 
 	rec := h.do(http.MethodPost, base+"/"+name+"/verify", "", token)
 	for _, r := range decodeDomain(t, rec.Body.Bytes()).DnsRecords {
