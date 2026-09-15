@@ -943,6 +943,23 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /workspaces/{slug}/messages/{messageId}/attachments/{attachmentId}:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/Slug' } }
+      - { name: messageId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: attachmentId, in: path, required: true, schema: { type: string, pattern: '^[0-9]{1,3}$' } }
+    get:
+      operationId: downloadReceivedAttachment
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: Decoded attachment bytes, forced download
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /workspaces/{slug}/messages/{messageId}/folder:
     parameters:
       - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/Slug' } }
@@ -1531,6 +1548,14 @@ components:
           description: The part before the @, lowercased.
         name: { type: string, maxLength: 200 }
 
+    ReceivedAttachment:
+      type: object
+      required: [id, filename, size_bytes]
+      properties:
+        id: { type: string }
+        filename: { type: string }
+        size_bytes: { type: integer, format: int64 }
+
     ReceivedMessage:
       type: object
       required: [id, mailbox_id, subject, size_bytes, received_at, folder]
@@ -1538,6 +1563,11 @@ components:
         `raw` is deliberately absent: the source of a message can be megabytes,
         and no view that lists subjects needs it.
       properties:
+        attachments:
+          type: array
+          items: { $ref: '#/components/schemas/ReceivedAttachment' }
+        attachments_omitted: { type: boolean }
+
         folder: { type: string, description: Persistent IMAP folder name. }
         id: { type: string, format: uuid }
         mailbox_id: { type: string, format: uuid }

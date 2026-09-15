@@ -188,6 +188,12 @@ func (s *Server) GetMessage(ctx context.Context, request GetMessageRequestObject
 		return nil, err
 	}
 	out := receivedMessageToAPI(msg)
+	items := make([]ReceivedAttachment, 0, len(presentation.Attachments))
+	for _, item := range presentation.Attachments {
+		items = append(items, ReceivedAttachment{Id: item.ID, Filename: item.Filename, SizeBytes: item.Size})
+	}
+	out.Attachments = &items
+	out.AttachmentsOmitted = &presentation.AttachmentsOmitted
 	out.ReplyTo = &presentation.ReplyTo
 	out.InlineMedia = &presentation.InlineMedia
 	out.InlineMediaOmitted = &presentation.Omitted

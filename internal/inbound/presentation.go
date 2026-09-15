@@ -16,11 +16,13 @@ import (
 // Presentation is derived only for an authorized detail request, never a list.
 // Old messages benefit without rewriting their stored MIME or display columns.
 type Presentation struct {
-	ReplyTo     []string
-	InlineMedia map[string]string
-	Omitted     bool
-	InReplyTo   string
-	References  string
+	Attachments        []ReceivedAttachment
+	AttachmentsOmitted bool
+	ReplyTo            []string
+	InlineMedia        map[string]string
+	Omitted            bool
+	InReplyTo          string
+	References         string
 }
 
 func (s *Store) Presentation(ctx context.Context, mailboxID, messageID string) (Presentation, error) {
@@ -36,6 +38,7 @@ var messageIDPattern = regexp.MustCompile(`<[^<>\s\x00-\x1f\x7f]{1,898}>`)
 
 func Present(raw []byte) Presentation {
 	out := Presentation{ReplyTo: []string{}, InlineMedia: map[string]string{}}
+	out.Attachments, _, out.AttachmentsOmitted = ScanAttachments(raw, "")
 	// Unknown charsets need not prevent decoding binary MIME siblings.
 	e, _ := gomessage.Read(bytes.NewReader(raw))
 	if e == nil {
