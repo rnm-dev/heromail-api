@@ -801,7 +801,7 @@ paths:
     put:
       operationId: setMailboxSMTPPassword
       security: [{ session: [] }]
-      summary: Owner delegates send-only SMTP access with a mailbox password
+      summary: Owner or admin delegates send-only SMTP access with a mailbox password
       requestBody:
         required: true
         content:

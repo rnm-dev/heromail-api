@@ -23,13 +23,23 @@ import (
 )
 
 func TestMailboxSMTPPasswordLifecycle(t *testing.T) {
+	for _, role := range []string{"owner", "admin"} {
+		t.Run(role, func(t *testing.T) { mailboxSMTPPasswordLifecycle(t, role) })
+	}
+}
+func mailboxSMTPPasswordLifecycle(t *testing.T, role string) {
 	h := newHarness(t)
 	ctx := t.Context()
 	owner, uid, _ := h.registerUser("smtp-app-owner")
 	member, memberID, _ := h.registerUser("smtp-app-member")
 	ws := h.workspaceFor(owner, "smtp-app")
+	if role == "admin" {
+		if _, err := h.pool.Exec(ctx, `UPDATE workspace_members SET role='admin' WHERE workspace_id=$1 AND user_id=$2`, ws, uid); err != nil {
+			t.Fatal(err)
+		}
+	}
 	t.Cleanup(func() { h.pool.Exec(context.Background(), `DELETE FROM workspaces WHERE id=$1`, ws) })
-	_, err := h.pool.Exec(ctx, `INSERT INTO workspace_members(workspace_id,user_id,role) VALUES($1,$2,'admin');`, ws, memberID)
+	_, err := h.pool.Exec(ctx, `INSERT INTO workspace_members(workspace_id,user_id,role) VALUES($1,$2,'member');`, ws, memberID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +54,7 @@ func TestMailboxSMTPPasswordLifecycle(t *testing.T) {
 	const next = "vaultwarden-test-password-B"
 	payload := fmt.Sprintf(`{"password":%q}`, pass)
 	if r := h.do("PUT", path, payload, member); r.Code != 403 {
-		t.Fatalf("admin may delegate: %d", r.Code)
+		t.Fatalf("member may delegate: %d", r.Code)
 	}
 	if r := h.do("PUT", path, payload, h.apiKeyFor(ws)); r.Code != 401 {
 		t.Fatalf("key may delegate: %d", r.Code)
@@ -157,11 +167,11 @@ func TestMailboxSMTPPasswordLifecycle(t *testing.T) {
 	if r := h.do("PUT", path, payload, owner); r.Code != 204 {
 		t.Fatalf("reset credential: %d %s", r.Code, r.Body)
 	}
-	if _, err := h.pool.Exec(ctx, `UPDATE workspace_members SET role='admin' WHERE workspace_id=$1 AND user_id=$2`, ws, uid); err != nil {
+	if _, err := h.pool.Exec(ctx, `UPDATE workspace_members SET role='member' WHERE workspace_id=$1 AND user_id=$2`, ws, uid); err != nil {
 		t.Fatal(err)
 	}
 	if login(connect(), pass) == nil {
-		t.Fatal("former owner secret accepted")
+		t.Fatal("demoted issuer secret accepted")
 	}
 	if _, err := h.pool.Exec(ctx, `UPDATE workspace_members SET role='owner' WHERE workspace_id=$1 AND user_id=$2`, ws, uid); err != nil {
 		t.Fatal(err)

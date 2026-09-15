@@ -73,12 +73,12 @@ const identityQuery = `SELECT wm.user_id,m.id,w.id,i.password_hash FROM mailboxe
  JOIN users u ON u.id=wm.user_id JOIN identities i ON i.user_id=u.id AND i.provider='password'
  WHERE lower(m.local_part||'@'||d.domain)=$1 AND d.verified_at IS NOT NULL AND NOT u.must_change_password`
 
-// A mailbox password delegates sending only. Its issuer must still own the
+// A mailbox password delegates sending only. Its issuer must still administer the
 // workspace; assignment and membership changes revoke the stored credential.
 const mailboxCredentialQuery = `SELECT c.issued_by,m.id,w.id,c.password_hash
  FROM mailbox_smtp_credentials c JOIN mailboxes m ON m.id=c.mailbox_id
  JOIN domains d ON d.id=m.domain_id JOIN workspaces w ON w.id=coalesce(m.personal_workspace_id,d.workspace_id)
- JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=c.issued_by AND wm.role='owner'
+ JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=c.issued_by AND wm.role IN ('owner','admin')
  WHERE lower(m.local_part||'@'||d.domain)=$1 AND d.verified_at IS NOT NULL`
 
 func (s *session) AuthMechanisms() []string { return []string{sasl.Plain} }

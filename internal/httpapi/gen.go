@@ -927,7 +927,7 @@ type ServerInterface interface {
 
 	// (DELETE /workspaces/{slug}/mailboxes/{mailboxId}/smtp-password)
 	DeleteMailboxSMTPPassword(w http.ResponseWriter, r *http.Request, slug Slug, mailboxId openapi_types.UUID)
-	// SetMailboxSMTPPassword Owner delegates send-only SMTP access with a mailbox password
+	// SetMailboxSMTPPassword Owner or admin delegates send-only SMTP access with a mailbox password
 	// (PUT /workspaces/{slug}/mailboxes/{mailboxId}/smtp-password)
 	SetMailboxSMTPPassword(w http.ResponseWriter, r *http.Request, slug Slug, mailboxId openapi_types.UUID)
 	// ListMembers Owner-only workspace member management
@@ -5058,7 +5058,7 @@ type StrictServerInterface interface {
 
 	// (DELETE /workspaces/{slug}/mailboxes/{mailboxId}/smtp-password)
 	DeleteMailboxSMTPPassword(ctx context.Context, request DeleteMailboxSMTPPasswordRequestObject) (DeleteMailboxSMTPPasswordResponseObject, error)
-	// SetMailboxSMTPPassword Owner delegates send-only SMTP access with a mailbox password
+	// SetMailboxSMTPPassword Owner or admin delegates send-only SMTP access with a mailbox password
 	// (PUT /workspaces/{slug}/mailboxes/{mailboxId}/smtp-password)
 	SetMailboxSMTPPassword(ctx context.Context, request SetMailboxSMTPPasswordRequestObject) (SetMailboxSMTPPasswordResponseObject, error)
 	// ListMembers Owner-only workspace member management
@@ -6611,17 +6611,17 @@ var swaggerSpec = []string{
 	"VZyQKtmZHKkbR02OI5ZGVH1NIyBsxVaSZK/GbEti0ZXMXzno+0Dnjnp5EZC5p8Z5mF4zv/dXUD/M5UMI",
 	"vavCgL4K34a32/X87eW+9nVDa2wZnyQufYHHvTcI0YlpDxqKs0E+7KTATWbzw/ZN62XJUKj8x4Po8vzj",
 	"h9aM482dq4nAa/mZe7V520vVZfBo8LyAa+Vn5WwHz+g3LCsuwXbhdO8NWU2yW3Np//Pl00S9uRYW3st0",
-	"4YXCkli55wVmoetUWlRrAA02Kmx4XOKt5mrTDZ3bUXCr6Aob8B2XU9od70PAtj48I13hXuYtPO3V14d1",
-	"yRYKyW/wAuiZfQpw/ERXgfllgWd7VHThH9gfXx4fM399AxMyL2zEXh4/Y4VstPpC4n75gkZ3sJJG3e9e",
-	"YrbGJ0dfHn+HHQWpiO2fdsU7IXo5lMkyLvkEfF/O/lqjtm4bOk2S8zLIuqei7fZF6I8dNPmdTvdEp2vF",
-	"09EXZ2mu9G4uN0pm6hoa5LdRNfyOrqclVsJmFKH+3jZUWcYbqqHdq8xqfmInsfU7yT6KhPFT5b/4/52t",
-	"z9CeV2Py9mYMrQTEnuQswbXNAbqKbq1MFXwyEawS3feWLEFL6JzrmUfgBfDk6dBLxKSa41DhJ9igqWeN",
-	"kgtNcNs6zxHg5GYL/dGX+od1TP5azWWqeFKCdan3fWskqtiCPTRWA8/ayNzc776CwNcQKxxEXQ/eHi0s",
-	"mIiNlY6x/4R2/SSQ+ptg7fDaTRpau3zOrQXtFviPX44Pv/v85Vn04vYPOwTBQ+TsU2xfOwj+YKIzFNg6",
-	"V9ewLNIeKgpew2/rPGR78gS9/7Xj3VtI/LKMS0ia+gTGCuljp3SIx7QhHU63jYHjn/V1eHp7Ate9qFfo",
-	"tHfSm1qbm5MjHPCTwPXhFLTKuEj7WmZ99+BqjjdVMU9bC5wcHeEvp8rYk389/vNxzxGm1znl6KnyIqLV",
-	"BX8sMi5bc9+U7DekRRF86yNILq3ps4tgtXFUlub7MuPGgg2LdnXZS6p+W1m2NpZXF/QlcLefb/9fAAAA",
-	"//8=",
+	"4YXCkli55wVmoetUWlRrAA02Kmx4XOKt5mrTDZ3bUXCr6Ioa8DXdF4apcMq/48UI2N+Hh6W73MsEhifC",
+	"+h6xLiFDsfkN7gA9s09Jjp/oqjS/LPBsj4o3/AP748vjY+bvcWBC5oWN2MvjZ6yQjZ5fSNwvX9AMD1YS",
+	"q/vdS0zb+Czpy+PvsLUgFbH9064EQIhejmmyjEs+Ad+gs78eqa37h06T5LyMtu6pert9I/pjR09+p9M9",
+	"0ela8XT0xZmcK02cyx2TmbqGBvlt1BG/o+tpiZWwPUWov7cxVdbzhopp9yqzmp/YSWz9TrKPImH8ePkv",
+	"/n9n61O159W8vL0ZQyuRsSc5VHBtl4Cuwlwr4wWfTCirRPe9JUvQEjrneuYReAE8eTr0EjGp5jhd+Al2",
+	"aupZo/ZCE9y2TngEOLnZS3/0pf5hHZO/VnOZKp6UYF1qgt8aiSq2YA+N1cCzNjI3N76vIPA1xAonUtcT",
+	"uEcLCyZiY6VjbEShXT8JpP4mWDu8dpOG1i6fc2tBuwX+45fjw+8+f3kWvbj9ww7R8BA5+1zb146GP5jo",
+	"DEW4ztU1LIu0hwqH1/DbOiHZHkFB73/twPcWEr+s5xKSxj+BsUL6ICod4jFtSIfTbYPh+Gd9HR7jnsB1",
+	"L+oVOu2d9KbW5ubkCCf9JHB9OAWtMi7SvpZZ3z24muxNVczT1gInR0f4y6ky9uRfj/983HOE6XVOOYOq",
+	"vJFodcEfi4zL1gA4JfsNaVEE3/oIkktr+uwiWHYclTX6vt64sWDDol1d9pLK4FaWrY3l1QV9Ldzt59v/",
+	"FwAA//8=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,
