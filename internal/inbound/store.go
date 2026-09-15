@@ -20,11 +20,11 @@ func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 // Corporate mailboxes inherit their domain tenant. Personal addresses override
 // it with their private workspace; every mailbox/message read uses that scope.
 const mailboxColumns = ` m.id, m.domain_id, coalesce(m.personal_workspace_id, d.workspace_id),
-	m.local_part || '@' || d.domain AS address, m.name, m.created_at, m.updated_at, m.owner_user_id`
+	m.local_part || '@' || d.domain AS address, m.name, m.created_at, m.updated_at, m.owner_user_id, EXISTS(SELECT 1 FROM mailbox_smtp_credentials c WHERE c.mailbox_id=m.id)`
 
 func scanMailbox(row pgx.Row) (*Mailbox, error) {
 	var m Mailbox
-	err := row.Scan(&m.ID, &m.DomainID, &m.WorkspaceID, &m.Address, &m.Name, &m.CreatedAt, &m.UpdatedAt, &m.OwnerUserID)
+	err := row.Scan(&m.ID, &m.DomainID, &m.WorkspaceID, &m.Address, &m.Name, &m.CreatedAt, &m.UpdatedAt, &m.OwnerUserID, &m.SMTPPasswordSet)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNoMailbox
 	}

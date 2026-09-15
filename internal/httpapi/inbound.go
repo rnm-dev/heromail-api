@@ -217,11 +217,12 @@ func mailboxToAPI(m *inbound.Mailbox) Mailbox {
 		owner = &id
 	}
 	return Mailbox{
-		OwnerUserId: owner,
-		Id:          mustUUID(m.ID),
-		Address:     openapi_types.Email(m.Address),
-		Name:        m.Name,
-		CreatedAt:   m.CreatedAt,
+		SmtpPasswordSet: &m.SMTPPasswordSet,
+		OwnerUserId:     owner,
+		Id:              mustUUID(m.ID),
+		Address:         openapi_types.Email(m.Address),
+		Name:            m.Name,
+		CreatedAt:       m.CreatedAt,
 	}
 }
 

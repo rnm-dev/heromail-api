@@ -794,6 +794,42 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /workspaces/{slug}/mailboxes/{mailboxId}/smtp-password:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/Slug' } }
+      - { name: mailboxId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      operationId: setMailboxSMTPPassword
+      security: [{ session: [] }]
+      summary: Owner delegates send-only SMTP access with a mailbox password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              additionalProperties: false
+              properties:
+                password: { type: string, minLength: 12, maxLength: 72, writeOnly: true }
+      responses:
+        '204': { description: SMTP password set or rotated }
+        default:
+          description: Password update failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    delete:
+      operationId: deleteMailboxSMTPPassword
+      security: [{ session: [] }]
+      responses:
+        '204': { description: Dedicated SMTP password revoked }
+        default:
+          description: Revocation failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /workspaces/{slug}/mailboxes/{mailboxId}/owner:
     parameters:
       - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/Slug' } }
@@ -1473,6 +1509,7 @@ components:
       required: [id, address, created_at]
       properties:
         owner_user_id: { type: string, format: uuid, nullable: true }
+        smtp_password_set: { type: boolean, description: Dedicated send-only password exists; no secret is returned. }
         can_read: { type: boolean }
         can_send: { type: boolean }
         id: { type: string, format: uuid }

@@ -54,6 +54,7 @@ type session struct {
 	c                                         *smtp.Conn
 	user, box, workspace, address, hash, from string
 	recipients                                []string
+	applicationCredential                     bool
 }
 
 var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("submission-unknown-user"), bcrypt.DefaultCost)
@@ -71,6 +72,14 @@ const identityQuery = `SELECT wm.user_id,m.id,w.id,i.password_hash FROM mailboxe
  JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=coalesce(m.owner_user_id,w.personal_owner_id)
  JOIN users u ON u.id=wm.user_id JOIN identities i ON i.user_id=u.id AND i.provider='password'
  WHERE lower(m.local_part||'@'||d.domain)=$1 AND d.verified_at IS NOT NULL AND NOT u.must_change_password`
+
+// A mailbox password delegates sending only. Its issuer must still own the
+// workspace; assignment and membership changes revoke the stored credential.
+const mailboxCredentialQuery = `SELECT c.issued_by,m.id,w.id,c.password_hash
+ FROM mailbox_smtp_credentials c JOIN mailboxes m ON m.id=c.mailbox_id
+ JOIN domains d ON d.id=m.domain_id JOIN workspaces w ON w.id=coalesce(m.personal_workspace_id,d.workspace_id)
+ JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=c.issued_by AND wm.role='owner'
+ WHERE lower(m.local_part||'@'||d.domain)=$1 AND d.verified_at IS NOT NULL`
 
 func (s *session) AuthMechanisms() []string { return []string{sasl.Plain} }
 func (s *session) Auth(mech string) (sasl.Server, error) {
@@ -94,14 +103,27 @@ func (s *session) Auth(mech string) (sasl.Server, error) {
 			}
 		}
 		var user, box, ws, hash string
-		err := s.b.Pool.QueryRow(ctx, identityQuery, address).Scan(&user, &box, &ws, &hash)
-		if err != nil {
-			bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
+		authenticated := false
+		application := false
+		for _, candidate := range []struct {
+			query       string
+			application bool
+		}{{mailboxCredentialQuery, true}, {identityQuery, false}} {
+			err := s.b.Pool.QueryRow(ctx, candidate.query, address).Scan(&user, &box, &ws, &hash)
+			if err != nil {
+				bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
+				continue
+			}
+			if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil {
+				authenticated = true
+				application = candidate.application
+				break
+			}
+		}
+		if !authenticated {
 			return smtp.ErrAuthFailed
 		}
-		if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
-			return smtp.ErrAuthFailed
-		}
+		s.applicationCredential = application
 		s.user = user
 		s.box = box
 		s.workspace = ws
@@ -115,7 +137,11 @@ func (s *session) check(ctx context.Context) error {
 		return authRequired
 	}
 	var user, box, ws, hash string
-	if err := s.b.Pool.QueryRow(ctx, identityQuery, s.address).Scan(&user, &box, &ws, &hash); err != nil {
+	query := identityQuery
+	if s.applicationCredential {
+		query = mailboxCredentialQuery
+	}
+	if err := s.b.Pool.QueryRow(ctx, query, s.address).Scan(&user, &box, &ws, &hash); err != nil {
 		return smtp.ErrAuthFailed
 	}
 	if user != s.user || box != s.box || ws != s.workspace || hash != s.hash {
