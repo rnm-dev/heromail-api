@@ -134,6 +134,32 @@ type LoginRequest struct {
 	Password string `json:"password" validate:"required"`
 }
 
+type ProvisionWorkspaceUserRequest struct {
+	WorkspaceID string
+	Email       string
+	Name        string
+	LocalPart   string
+	Domain      string
+}
+
+// ProvisionWorkspaceUser creates an administrator-issued account and returns
+// the plaintext credential exactly once to the HTTP layer.
+func (s *Service) ProvisionWorkspaceUser(ctx context.Context, req ProvisionWorkspaceUserRequest) (*User, string, error) {
+	password, err := newTemporaryPassword()
+	if err != nil {
+		return nil, "", err
+	}
+	hash, err := hashPassword(password)
+	if err != nil {
+		return nil, "", err
+	}
+	user, err := s.store.ProvisionWorkspaceUser(ctx, req.WorkspaceID, normaliseEmail(req.Email), strings.TrimSpace(req.Name), strings.ToLower(strings.TrimSpace(req.LocalPart)), strings.ToLower(strings.TrimSpace(req.Domain)), hash)
+	if err != nil {
+		return nil, "", err
+	}
+	return user, password, nil
+}
+
 // Credentials is what a successful sign-in hands back, matching the shape the
 // frontend was built against.
 type Credentials struct {

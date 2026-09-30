@@ -17,6 +17,8 @@ var (
 	ErrNotFound      = errors.New("not found")
 	ErrEmailTaken    = errors.New("email already registered")
 	ErrSubjectLinked = errors.New("identity already linked to another user")
+	ErrAddressTaken  = errors.New("mailbox address already exists")
+	ErrDomainInvalid = errors.New("domain is missing or unverified")
 )
 
 const uniqueViolation = "23505"
@@ -77,6 +79,52 @@ func (s *Store) CreateWithPassword(ctx context.Context, email, name string, pass
 	}
 
 	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+
+// ProvisionWorkspaceUser atomically creates the account, restricted initial
+// credential, workspace membership and private mailbox. Atomicity matters: a
+// failed mailbox insert must not strand an account whose password was shown to
+// nobody.
+func (s *Store) ProvisionWorkspaceUser(ctx context.Context, workspaceID, email, name, localPart, domain string, passwordHash []byte) (*User, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	var domainID string
+	if err = tx.QueryRow(ctx, `SELECT id FROM domains WHERE workspace_id=$1 AND domain=lower($2) AND verified_at IS NOT NULL`, workspaceID, domain).Scan(&domainID); errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrDomainInvalid
+	} else if err != nil {
+		return nil, err
+	}
+
+	user, err := scanUser(tx.QueryRow(ctx, `INSERT INTO users (email,name,must_change_password) VALUES (lower($1),$2,true) RETURNING`+userColumns, email, name))
+	if err != nil {
+		if isUnique(err) {
+			return nil, ErrEmailTaken
+		}
+		return nil, fmt.Errorf("insert provisioned user: %w", err)
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO identities(user_id,provider,subject,password_hash) VALUES($1,'password',lower($2),$3)`, user.ID, email, string(passwordHash)); err != nil {
+		if isUnique(err) {
+			return nil, ErrEmailTaken
+		}
+		return nil, fmt.Errorf("insert provisioned identity: %w", err)
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO workspace_members(workspace_id,user_id,role) VALUES($1,$2,'member')`, workspaceID, user.ID); err != nil {
+		return nil, fmt.Errorf("insert provisioned membership: %w", err)
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO mailboxes(domain_id,local_part,name,owner_user_id) VALUES($1,lower($2),nullif($3,''),$4)`, domainID, localPart, name, user.ID); err != nil {
+		if isUnique(err) {
+			return nil, ErrAddressTaken
+		}
+		return nil, fmt.Errorf("insert provisioned mailbox: %w", err)
+	}
+	if err = tx.Commit(ctx); err != nil {
 		return nil, err
 	}
 	return user, nil

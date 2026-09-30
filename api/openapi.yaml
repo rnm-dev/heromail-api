@@ -128,6 +128,30 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /workspaces/{slug}/users:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: provisionWorkspaceUser
+      tags: [workspaces]
+      summary: Provision a member with a private mailbox and temporary password
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProvisionWorkspaceUserRequest' }
+      responses:
+        '201':
+          description: User provisioned; temporary_password is returned only in this response
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProvisionWorkspaceUserResponse' }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /workspaces/{slug}/members/{userId}:
     parameters:
       - { name: slug, in: path, required: true, schema: { type: string } }
@@ -1247,6 +1271,18 @@ components:
       properties:
         email: { type: string }
         role: { type: string, enum: [admin, member] }
+    ProvisionWorkspaceUserRequest:
+      type: object
+      required: [name, email]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        email: { type: string, format: email, maxLength: 254 }
+    ProvisionWorkspaceUserResponse:
+      type: object
+      required: [user, temporary_password]
+      properties:
+        user: { $ref: '#/components/schemas/Member' }
+        temporary_password: { type: string, writeOnly: true }
     UpdateMemberRequest:
       type: object
       required: [role]

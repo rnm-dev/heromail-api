@@ -53,6 +53,17 @@ var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("heromail-timing-equaliser
 
 func burnPasswordTime() { bcrypt.CompareHashAndPassword(dummyHash, []byte("x")) }
 
+// newTemporaryPassword returns a high-entropy credential that is safe to copy
+// through text fields. The plaintext is returned to the provisioning caller
+// once; only its bcrypt hash is persisted.
+func newTemporaryPassword() (string, error) {
+	raw := make([]byte, 18)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
 // newToken returns a URL-safe secret and its SHA-256 digest. Sessions and
 // emailed links both use it: the plaintext travels, only the digest is stored.
 func newToken() (token string, hash []byte, err error) {

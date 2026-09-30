@@ -6,7 +6,9 @@ import (
 	"net/mail"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/rnm/heromail/backend/internal/account"
 	"github.com/rnm/heromail/backend/internal/workspace"
 )
 
@@ -97,6 +99,46 @@ func (s *Server) AddMember(ctx context.Context, r AddMemberRequestObject) (AddMe
 	}
 	out, err := s.members(ctx, id)
 	return AddMember201JSONResponse(out), err
+}
+
+func (s *Server) ProvisionWorkspaceUser(ctx context.Context, r ProvisionWorkspaceUserRequestObject) (ProvisionWorkspaceUserResponseObject, error) {
+	id, status, body, err := s.memberScope(ctx, r.Slug)
+	if err != nil {
+		return nil, err
+	}
+	if status != 0 {
+		return ProvisionWorkspaceUserdefaultJSONResponse{StatusCode: status, Body: body}, nil
+	}
+	fail := func(code int, errorCode, message string) (ProvisionWorkspaceUserResponseObject, error) {
+		return ProvisionWorkspaceUserdefaultJSONResponse{StatusCode: code, Body: errorBody(errorCode, message)}, nil
+	}
+	if r.Body == nil {
+		return fail(400, "validation_failed", "name and email are required")
+	}
+	name := strings.TrimSpace(r.Body.Name)
+	email := strings.ToLower(strings.TrimSpace(string(r.Body.Email)))
+	parsed, parseErr := mail.ParseAddress(email)
+	local, domain, ok := strings.Cut(email, "@")
+	if name == "" || len([]rune(name)) > 200 || parseErr != nil || parsed.Address != email || !ok || local == "" || domain == "" {
+		return fail(400, "validation_failed", "provide a name and valid workspace email address")
+	}
+	user, password, err := s.accounts.ProvisionWorkspaceUser(ctx, account.ProvisionWorkspaceUserRequest{
+		WorkspaceID: id, Email: email, Name: name, LocalPart: local, Domain: domain,
+	})
+	switch {
+	case errors.Is(err, account.ErrEmailTaken):
+		return fail(409, "email_taken", "an account with this email already exists")
+	case errors.Is(err, account.ErrAddressTaken):
+		return fail(409, "address_taken", "that mailbox address already exists")
+	case errors.Is(err, account.ErrDomainInvalid):
+		return fail(400, "domain_not_verified", "choose an address under a verified workspace domain")
+	case err != nil:
+		return nil, err
+	}
+	return ProvisionWorkspaceUser201JSONResponse{
+		User:              Member{Id: uuid.MustParse(user.ID), Email: user.Email, Name: user.Name, Role: RoleMember},
+		TemporaryPassword: &password,
+	}, nil
 }
 
 func (s *Server) UpdateMember(ctx context.Context, r UpdateMemberRequestObject) (UpdateMemberResponseObject, error) {
