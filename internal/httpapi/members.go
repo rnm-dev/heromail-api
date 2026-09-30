@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/mail"
+	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
@@ -11,6 +12,8 @@ import (
 	"github.com/rnm/heromail/backend/internal/account"
 	"github.com/rnm/heromail/backend/internal/workspace"
 )
+
+var provisionedLocalPart = regexp.MustCompile(`^[a-z0-9_%+-]+(?:\.[a-z0-9_%+-]+)*$`)
 
 func (s *Server) memberScope(ctx context.Context, slug string) (string, int, Error, error) {
 	id, forbidden, err := s.scope(ctx, slug, workspace.RoleOwner)
@@ -119,7 +122,7 @@ func (s *Server) ProvisionWorkspaceUser(ctx context.Context, r ProvisionWorkspac
 	email := strings.ToLower(strings.TrimSpace(string(r.Body.Email)))
 	parsed, parseErr := mail.ParseAddress(email)
 	local, domain, ok := strings.Cut(email, "@")
-	if name == "" || len([]rune(name)) > 200 || parseErr != nil || parsed.Address != email || !ok || local == "" || domain == "" {
+	if name == "" || len([]rune(name)) > 200 || parseErr != nil || parsed.Address != email || !ok || !provisionedLocalPart.MatchString(local) || domain == "" {
 		return fail(400, "validation_failed", "provide a name and valid workspace email address")
 	}
 	user, password, err := s.accounts.ProvisionWorkspaceUser(ctx, account.ProvisionWorkspaceUserRequest{
@@ -136,8 +139,11 @@ func (s *Server) ProvisionWorkspaceUser(ctx context.Context, r ProvisionWorkspac
 		return nil, err
 	}
 	return ProvisionWorkspaceUser201JSONResponse{
-		User:              Member{Id: uuid.MustParse(user.ID), Email: user.Email, Name: user.Name, Role: RoleMember},
-		TemporaryPassword: &password,
+		Body: ProvisionWorkspaceUserResponse{
+			User:              Member{Id: uuid.MustParse(user.ID), Email: user.Email, Name: user.Name, Role: RoleMember},
+			TemporaryPassword: &password,
+		},
+		Headers: ProvisionWorkspaceUser201ResponseHeaders{CacheControl: "no-store"},
 	}, nil
 }
 

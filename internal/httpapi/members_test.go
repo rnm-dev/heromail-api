@@ -54,10 +54,24 @@ func TestOwnerProvisionsWorkspaceUser(t *testing.T) {
 	slug := h.slugFor(workspaceID)
 	domain := h.verifiedDomainFor(t, workspaceID)
 	email := "new.employee@" + domain
+	check := func(token, body string, want int) {
+		t.Helper()
+		got := h.do(http.MethodPost, "/workspaces/"+slug+"/users", body, token)
+		if got.Code != want {
+			t.Fatalf("provision guard: got %d want %d: %s", got.Code, want, got.Body.String())
+		}
+	}
+	check("", fmt.Sprintf(`{"name":"New Employee","email":%q}`, email), http.StatusUnauthorized)
+	outsider, _, _ := h.registerUser("provision-outsider")
+	check(outsider, fmt.Sprintf(`{"name":"New Employee","email":%q}`, email), http.StatusNotFound)
+	check(owner, fmt.Sprintf(`{"name":"Bad Address","email":%q}`, `"bad..local"@`+domain), http.StatusBadRequest)
 
 	rec := h.do(http.MethodPost, "/workspaces/"+slug+"/users", fmt.Sprintf(`{"name":"New Employee","email":%q}`, email), owner)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("provision: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q", got)
 	}
 	var result struct {
 		TemporaryPassword string `json:"temporary_password"`

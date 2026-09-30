@@ -144,6 +144,11 @@ paths:
       responses:
         '201':
           description: User provisioned; temporary_password is returned only in this response
+          headers:
+            Cache-Control:
+              required: true
+              schema: { type: string }
+              description: Prevents storage of the one-time credential response
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ProvisionWorkspaceUserResponse' }
