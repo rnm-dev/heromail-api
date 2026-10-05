@@ -1207,6 +1207,125 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /workspaces/{slug}/calendar:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/Slug' } }
+    get:
+      operationId: getCalendar
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: Personal calendar settings
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CalendarSettings' }
+        default:
+          description: Calendar operation failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    put:
+      operationId: updateCalendar
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CalendarSettings' }
+      responses:
+        '200':
+          description: Personal calendar settings
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CalendarSettings' }
+        default:
+          description: Calendar operation failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /workspaces/{slug}/calendar/events:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/Slug' } }
+    get:
+      operationId: listCalendarEvents
+      security: [{ session: [] }]
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string }, description: Inclusive local date YYYY-MM-DD }
+        - { name: to, in: query, required: true, schema: { type: string }, description: Exclusive local date YYYY-MM-DD; maximum 93-day range }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, maximum: 100000, default: 0 } }
+      responses:
+        '200':
+          description: Personal events intersecting the range in calendar timezone
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events, has_more]
+                properties:
+                  events: { type: array, items: { $ref: '#/components/schemas/CalendarEvent' } }
+                  has_more: { type: boolean }
+        default:
+          description: Calendar operation failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    post:
+      operationId: createCalendarEvent
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CalendarEventInput' }
+      responses:
+        '201':
+          description: Created personal event
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CalendarEvent' }
+        default:
+          description: Calendar operation failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /workspaces/{slug}/calendar/events/{eventId}:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/Slug' } }
+      - { name: eventId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      operationId: updateCalendarEvent
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CalendarEventInput' }
+      responses:
+        '200':
+          description: Updated personal event
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CalendarEvent' }
+        default:
+          description: Calendar operation failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    delete:
+      operationId: deleteCalendarEvent
+      security: [{ session: [] }]
+      parameters:
+        - { name: version, in: query, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '204': { description: Deleted personal event }
+        default:
+          description: Calendar operation failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
 components:
   securitySchemes:
     session:
@@ -1255,6 +1374,46 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    CalendarSettings:
+      type: object
+      required: [timezone]
+      properties:
+        timezone: { type: string }
+    CalendarEventInput:
+      type: object
+      x-go-type: calendar.Input
+      x-go-type-import:
+        path: github.com/rnm/heromail/backend/internal/calendar
+        name: calendar
+      required: [title, description, location, timezone, all_day, start, end, version]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 20000 }
+        location: { type: string, maxLength: 2000 }
+        timezone: { type: string, description: IANA timezone }
+        all_day: { type: boolean }
+        start: { type: string, description: YYYY-MM-DD for all-day or local YYYY-MM-DDTHH:mm }
+        end: { type: string, description: Exclusive end date or local date/time }
+        version: { type: integer, minimum: 0, description: 0 on create; current version on update }
+    CalendarEvent:
+      type: object
+      x-go-type: calendar.Event
+      x-go-type-import:
+        path: github.com/rnm/heromail/backend/internal/calendar
+        name: calendar
+      required: [title, description, location, timezone, all_day, start, end, version, id]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 20000 }
+        location: { type: string, maxLength: 2000 }
+        timezone: { type: string, description: IANA timezone }
+        all_day: { type: boolean }
+        start: { type: string, description: YYYY-MM-DD for all-day or local YYYY-MM-DDTHH:mm }
+        end: { type: string, description: Exclusive end date or local date/time }
+        version: { type: integer, minimum: 0, description: 0 on create; current version on update }
+        id: { type: string, format: uuid }
+        start_at: { type: string, format: date-time }
+        end_at: { type: string, format: date-time }
     Member:
       type: object
       required: [id, email, name, role]

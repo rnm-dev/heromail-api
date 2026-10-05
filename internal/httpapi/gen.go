@@ -24,6 +24,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
+	calendar "github.com/rnm/heromail/backend/internal/calendar"
 )
 
 // Defines values for AddMemberRequestRole.
@@ -279,6 +280,17 @@ type Attachment struct {
 	Filename    string             `json:"filename"`
 	Id          openapi_types.UUID `json:"id"`
 	SizeBytes   int64              `json:"size_bytes"`
+}
+
+// CalendarEvent defines model for CalendarEvent.
+type CalendarEvent = calendar.Event
+
+// CalendarEventInput defines model for CalendarEventInput.
+type CalendarEventInput = calendar.Input
+
+// CalendarSettings defines model for CalendarSettings.
+type CalendarSettings struct {
+	Timezone string `json:"timezone"`
 }
 
 // CreateMailboxRequest defines model for CreateMailboxRequest.
@@ -726,6 +738,21 @@ type UploadWorkspaceAttachmentMultipartBody struct {
 	File openapi_types.File `json:"file"`
 }
 
+// ListCalendarEventsParams defines parameters for ListCalendarEvents.
+type ListCalendarEventsParams struct {
+	// From Inclusive local date YYYY-MM-DD
+	From string `form:"from" json:"from"`
+
+	// To Exclusive local date YYYY-MM-DD; maximum 93-day range
+	To     string `form:"to" json:"to"`
+	Offset *int   `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// DeleteCalendarEventParams defines parameters for DeleteCalendarEvent.
+type DeleteCalendarEventParams struct {
+	Version int `form:"version" json:"version"`
+}
+
 // SendWorkspaceEmailParams defines parameters for SendWorkspaceEmail.
 type SendWorkspaceEmailParams struct {
 	IdempotencyKey *string `json:"Idempotency-Key,omitempty"`
@@ -798,6 +825,15 @@ type CreateApiKeyJSONRequestBody CreateApiKeyJSONBody
 
 // UploadWorkspaceAttachmentMultipartRequestBody defines body for UploadWorkspaceAttachment for multipart/form-data ContentType.
 type UploadWorkspaceAttachmentMultipartRequestBody UploadWorkspaceAttachmentMultipartBody
+
+// UpdateCalendarJSONRequestBody defines body for UpdateCalendar for application/json ContentType.
+type UpdateCalendarJSONRequestBody = CalendarSettings
+
+// CreateCalendarEventJSONRequestBody defines body for CreateCalendarEvent for application/json ContentType.
+type CreateCalendarEventJSONRequestBody = CalendarEventInput
+
+// UpdateCalendarEventJSONRequestBody defines body for UpdateCalendarEvent for application/json ContentType.
+type UpdateCalendarEventJSONRequestBody = CalendarEventInput
 
 // AddDomainJSONRequestBody defines body for AddDomain for application/json ContentType.
 type AddDomainJSONRequestBody = AddDomainRequest
@@ -900,6 +936,24 @@ type ServerInterface interface {
 	// UploadWorkspaceAttachment Upload a file as a workspace member
 	// (POST /workspaces/{slug}/attachments)
 	UploadWorkspaceAttachment(w http.ResponseWriter, r *http.Request, slug string)
+
+	// (GET /workspaces/{slug}/calendar)
+	GetCalendar(w http.ResponseWriter, r *http.Request, slug Slug)
+
+	// (PUT /workspaces/{slug}/calendar)
+	UpdateCalendar(w http.ResponseWriter, r *http.Request, slug Slug)
+
+	// (GET /workspaces/{slug}/calendar/events)
+	ListCalendarEvents(w http.ResponseWriter, r *http.Request, slug Slug, params ListCalendarEventsParams)
+
+	// (POST /workspaces/{slug}/calendar/events)
+	CreateCalendarEvent(w http.ResponseWriter, r *http.Request, slug Slug)
+
+	// (DELETE /workspaces/{slug}/calendar/events/{eventId})
+	DeleteCalendarEvent(w http.ResponseWriter, r *http.Request, slug Slug, eventId openapi_types.UUID, params DeleteCalendarEventParams)
+
+	// (PUT /workspaces/{slug}/calendar/events/{eventId})
+	UpdateCalendarEvent(w http.ResponseWriter, r *http.Request, slug Slug, eventId openapi_types.UUID)
 	// ListDomains Mail domains owned by the workspace
 	// (GET /workspaces/{slug}/domains)
 	ListDomains(w http.ResponseWriter, r *http.Request, slug Slug)
@@ -1448,6 +1502,238 @@ func (siw *ServerInterfaceWrapper) UploadWorkspaceAttachment(w http.ResponseWrit
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UploadWorkspaceAttachment(w, r, slug)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetCalendar operation middleware
+func (siw *ServerInterfaceWrapper) GetCalendar(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "slug" -------------
+	var slug Slug
+
+	err = runtime.BindStyledParameterWithOptions("simple", "slug", r.PathValue("slug"), &slug, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "slug", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCalendar(w, r, slug)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateCalendar operation middleware
+func (siw *ServerInterfaceWrapper) UpdateCalendar(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "slug" -------------
+	var slug Slug
+
+	err = runtime.BindStyledParameterWithOptions("simple", "slug", r.PathValue("slug"), &slug, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "slug", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateCalendar(w, r, slug)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListCalendarEvents operation middleware
+func (siw *ServerInterfaceWrapper) ListCalendarEvents(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "slug" -------------
+	var slug Slug
+
+	err = runtime.BindStyledParameterWithOptions("simple", "slug", r.PathValue("slug"), &slug, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "slug", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListCalendarEventsParams
+
+	// ------------- Required query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "from", r.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "to", r.URL.Query(), &params.To, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListCalendarEvents(w, r, slug, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateCalendarEvent operation middleware
+func (siw *ServerInterfaceWrapper) CreateCalendarEvent(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "slug" -------------
+	var slug Slug
+
+	err = runtime.BindStyledParameterWithOptions("simple", "slug", r.PathValue("slug"), &slug, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "slug", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateCalendarEvent(w, r, slug)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteCalendarEvent operation middleware
+func (siw *ServerInterfaceWrapper) DeleteCalendarEvent(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "slug" -------------
+	var slug Slug
+
+	err = runtime.BindStyledParameterWithOptions("simple", "slug", r.PathValue("slug"), &slug, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "slug", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "eventId" -------------
+	var eventId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "eventId", r.PathValue("eventId"), &eventId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "eventId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteCalendarEventParams
+
+	// ------------- Required query parameter "version" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "version", r.URL.Query(), &params.Version, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "version"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "version", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteCalendarEvent(w, r, slug, eventId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateCalendarEvent operation middleware
+func (siw *ServerInterfaceWrapper) UpdateCalendarEvent(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "slug" -------------
+	var slug Slug
+
+	err = runtime.BindStyledParameterWithOptions("simple", "slug", r.PathValue("slug"), &slug, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "slug", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "eventId" -------------
+	var eventId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "eventId", r.PathValue("eventId"), &eventId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "eventId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateCalendarEvent(w, r, slug, eventId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2480,6 +2766,12 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/workspaces/{slug}/api-keys/{keyId}", wrapper.RevokeApiKey)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/attachments", wrapper.UploadAttachment)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/emails/{id}", wrapper.GetEmail)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/workspaces/{slug}/calendar", wrapper.GetCalendar)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/workspaces/{slug}/calendar", wrapper.UpdateCalendar)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/workspaces/{slug}/calendar/events", wrapper.ListCalendarEvents)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/workspaces/{slug}/calendar/events", wrapper.CreateCalendarEvent)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/workspaces/{slug}/calendar/events/{eventId}", wrapper.DeleteCalendarEvent)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/workspaces/{slug}/calendar/events/{eventId}", wrapper.UpdateCalendarEvent)
 
 	return m
 }
@@ -3731,6 +4023,244 @@ func (response UploadWorkspaceAttachment503JSONResponse) VisitUploadWorkspaceAtt
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCalendarRequestObject struct {
+	Slug Slug `json:"slug"`
+}
+
+type GetCalendarResponseObject interface {
+	VisitGetCalendarResponse(w http.ResponseWriter) error
+}
+
+type GetCalendar200JSONResponse CalendarSettings
+
+func (response GetCalendar200JSONResponse) VisitGetCalendarResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCalendardefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetCalendardefaultJSONResponse) VisitGetCalendarResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateCalendarRequestObject struct {
+	Slug Slug `json:"slug"`
+	Body *UpdateCalendarJSONRequestBody
+}
+
+type UpdateCalendarResponseObject interface {
+	VisitUpdateCalendarResponse(w http.ResponseWriter) error
+}
+
+type UpdateCalendar200JSONResponse CalendarSettings
+
+func (response UpdateCalendar200JSONResponse) VisitUpdateCalendarResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateCalendardefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response UpdateCalendardefaultJSONResponse) VisitUpdateCalendarResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCalendarEventsRequestObject struct {
+	Slug   Slug `json:"slug"`
+	Params ListCalendarEventsParams
+}
+
+type ListCalendarEventsResponseObject interface {
+	VisitListCalendarEventsResponse(w http.ResponseWriter) error
+}
+
+type ListCalendarEvents200JSONResponse struct {
+	Events  []CalendarEvent `json:"events"`
+	HasMore bool            `json:"has_more"`
+}
+
+func (response ListCalendarEvents200JSONResponse) VisitListCalendarEventsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCalendarEventsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListCalendarEventsdefaultJSONResponse) VisitListCalendarEventsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateCalendarEventRequestObject struct {
+	Slug Slug `json:"slug"`
+	Body *CreateCalendarEventJSONRequestBody
+}
+
+type CreateCalendarEventResponseObject interface {
+	VisitCreateCalendarEventResponse(w http.ResponseWriter) error
+}
+
+type CreateCalendarEvent201JSONResponse CalendarEvent
+
+func (response CreateCalendarEvent201JSONResponse) VisitCreateCalendarEventResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateCalendarEventdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateCalendarEventdefaultJSONResponse) VisitCreateCalendarEventResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteCalendarEventRequestObject struct {
+	Slug    Slug               `json:"slug"`
+	EventId openapi_types.UUID `json:"eventId"`
+	Params  DeleteCalendarEventParams
+}
+
+type DeleteCalendarEventResponseObject interface {
+	VisitDeleteCalendarEventResponse(w http.ResponseWriter) error
+}
+
+type DeleteCalendarEvent204Response struct {
+}
+
+func (response DeleteCalendarEvent204Response) VisitDeleteCalendarEventResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteCalendarEventdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DeleteCalendarEventdefaultJSONResponse) VisitDeleteCalendarEventResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateCalendarEventRequestObject struct {
+	Slug    Slug               `json:"slug"`
+	EventId openapi_types.UUID `json:"eventId"`
+	Body    *UpdateCalendarEventJSONRequestBody
+}
+
+type UpdateCalendarEventResponseObject interface {
+	VisitUpdateCalendarEventResponse(w http.ResponseWriter) error
+}
+
+type UpdateCalendarEvent200JSONResponse CalendarEvent
+
+func (response UpdateCalendarEvent200JSONResponse) VisitUpdateCalendarEventResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateCalendarEventdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response UpdateCalendarEventdefaultJSONResponse) VisitUpdateCalendarEventResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -5109,6 +5639,24 @@ type StrictServerInterface interface {
 	// UploadWorkspaceAttachment Upload a file as a workspace member
 	// (POST /workspaces/{slug}/attachments)
 	UploadWorkspaceAttachment(ctx context.Context, request UploadWorkspaceAttachmentRequestObject) (UploadWorkspaceAttachmentResponseObject, error)
+
+	// (GET /workspaces/{slug}/calendar)
+	GetCalendar(ctx context.Context, request GetCalendarRequestObject) (GetCalendarResponseObject, error)
+
+	// (PUT /workspaces/{slug}/calendar)
+	UpdateCalendar(ctx context.Context, request UpdateCalendarRequestObject) (UpdateCalendarResponseObject, error)
+
+	// (GET /workspaces/{slug}/calendar/events)
+	ListCalendarEvents(ctx context.Context, request ListCalendarEventsRequestObject) (ListCalendarEventsResponseObject, error)
+
+	// (POST /workspaces/{slug}/calendar/events)
+	CreateCalendarEvent(ctx context.Context, request CreateCalendarEventRequestObject) (CreateCalendarEventResponseObject, error)
+
+	// (DELETE /workspaces/{slug}/calendar/events/{eventId})
+	DeleteCalendarEvent(ctx context.Context, request DeleteCalendarEventRequestObject) (DeleteCalendarEventResponseObject, error)
+
+	// (PUT /workspaces/{slug}/calendar/events/{eventId})
+	UpdateCalendarEvent(ctx context.Context, request UpdateCalendarEventRequestObject) (UpdateCalendarEventResponseObject, error)
 	// ListDomains Mail domains owned by the workspace
 	// (GET /workspaces/{slug}/domains)
 	ListDomains(ctx context.Context, request ListDomainsRequestObject) (ListDomainsResponseObject, error)
@@ -5877,6 +6425,187 @@ func (sh *strictHandler) UploadWorkspaceAttachment(w http.ResponseWriter, r *htt
 	}
 }
 
+// GetCalendar operation middleware
+func (sh *strictHandler) GetCalendar(w http.ResponseWriter, r *http.Request, slug Slug) {
+	var request GetCalendarRequestObject
+
+	request.Slug = slug
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetCalendar(ctx, request.(GetCalendarRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetCalendar")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetCalendarResponseObject); ok {
+		if err := validResponse.VisitGetCalendarResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateCalendar operation middleware
+func (sh *strictHandler) UpdateCalendar(w http.ResponseWriter, r *http.Request, slug Slug) {
+	var request UpdateCalendarRequestObject
+
+	request.Slug = slug
+
+	var body UpdateCalendarJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateCalendar(ctx, request.(UpdateCalendarRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateCalendar")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateCalendarResponseObject); ok {
+		if err := validResponse.VisitUpdateCalendarResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListCalendarEvents operation middleware
+func (sh *strictHandler) ListCalendarEvents(w http.ResponseWriter, r *http.Request, slug Slug, params ListCalendarEventsParams) {
+	var request ListCalendarEventsRequestObject
+
+	request.Slug = slug
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListCalendarEvents(ctx, request.(ListCalendarEventsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListCalendarEvents")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListCalendarEventsResponseObject); ok {
+		if err := validResponse.VisitListCalendarEventsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateCalendarEvent operation middleware
+func (sh *strictHandler) CreateCalendarEvent(w http.ResponseWriter, r *http.Request, slug Slug) {
+	var request CreateCalendarEventRequestObject
+
+	request.Slug = slug
+
+	var body CreateCalendarEventJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateCalendarEvent(ctx, request.(CreateCalendarEventRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateCalendarEvent")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateCalendarEventResponseObject); ok {
+		if err := validResponse.VisitCreateCalendarEventResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteCalendarEvent operation middleware
+func (sh *strictHandler) DeleteCalendarEvent(w http.ResponseWriter, r *http.Request, slug Slug, eventId openapi_types.UUID, params DeleteCalendarEventParams) {
+	var request DeleteCalendarEventRequestObject
+
+	request.Slug = slug
+	request.EventId = eventId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteCalendarEvent(ctx, request.(DeleteCalendarEventRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteCalendarEvent")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteCalendarEventResponseObject); ok {
+		if err := validResponse.VisitDeleteCalendarEventResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateCalendarEvent operation middleware
+func (sh *strictHandler) UpdateCalendarEvent(w http.ResponseWriter, r *http.Request, slug Slug, eventId openapi_types.UUID) {
+	var request UpdateCalendarEventRequestObject
+
+	request.Slug = slug
+	request.EventId = eventId
+
+	var body UpdateCalendarEventJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateCalendarEvent(ctx, request.(UpdateCalendarEventRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateCalendarEvent")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateCalendarEventResponseObject); ok {
+		if err := validResponse.VisitUpdateCalendarEventResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListDomains operation middleware
 func (sh *strictHandler) ListDomains(w http.ResponseWriter, r *http.Request, slug Slug) {
 	var request ListDomainsRequestObject
@@ -6595,165 +7324,175 @@ func (sh *strictHandler) ProvisionWorkspaceUser(w http.ResponseWriter, r *http.R
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"7L3rchs5liD8Kgh+/UV1a1KUfKnuKfnHrtoud2unVPZI9lZHFD0imHlIopkJZAFI0myHIuYh9hn2weZJ",
-	"NnAO8kYieZFEWV1Tv2xJmUjg3O/40otVlisJ0pre2ZeeBpMraQB/+DNPruCXAox1P8VKWpD4X57nqYi5",
-	"FUqe/N0o6X5n4ilk3P3vdxrGvbPe/3dSL31CfzUn32utdO/29jbqJWBiLXK3SO+s92EKTNPHmDAs4+lY",
-	"6QwSpjQbc5EaNuepSPCbvduo91bpkUgSkIff2nlhpyCtWxWSiI0Ky+wUWMzTFPQ3hmmVAhOS2akwbKH0",
-	"zOQ8BncKqxRL1aI/kG+EsULGlo21ytjL05dnuIYGowodA4PPwljDuEzc75cs5pIZACZsRL/4e2HsQGZ8",
-	"yaSyLJ5yOXF/7Q8QGj8q+1YVMjk8MH5UzBTxtN75QtgpHr4BEROrHNy+Pih1yeXSU5F5HDKibTj4qzlo",
-	"xpnmFlgqMmH7bHgFVi+Pz8cW9JDFXGsBBncvi2wEmqnxQBqIlUwMK6QVKf5xIWSiFu7UYI0DetSbAk9A",
-	"45kaa7of21u6XlsMt1Ku1YsaZ7bLHHpnPSEtTAAPeBv1Pkpe2KnS4h/wCAi+FMYIOYlqFowYfM6FJl7U",
-	"MFczSFisIXFMwVPTc4v4dd1nz5Pkjcq4kA3hwZNEuA/w9L1WOWgrnIgZ89RA1Msbv/rSS/DdbfunL/zI",
-	"M8DPO9Hhttg7+7lc4FNUglON/g6xdfR4niSX4NDc2Fr765BxkTZQYawWcuLedWyOT8gic5/hSSYcHWS4",
-	"YONz5Ssr26KV/TrBzeXi32C5vqVYg5M8Nxy363Di/tdLuIVjKzLoReubFUnr2aIQSeixGSxvcg1j8Xmd",
-	"bn8Angg5cbJG89iCNkzJdPmKSUC2akhFJ7iWTgxM+qGvpNzYm8JsPoIs0pSPHIitLiCwinS4DiKGSPIe",
-	"i69gCmGFn2tBKGpiohuBPwk7vYZYAxF+mr4b985+3kzNHvW30SruZ0QQ60JuXKQpm8EyYhpsoaXjThkD",
-	"45bhLoWSffZOpksmrGGJmJBiHUhjlXY8bRQpLEHSz6GWOWgxYUttpAprRAIN2U6SbzP03JbXofPJwcda",
-	"Hk8zL7tWiJyE2g29FsDyXbhgLFLoJJsdWcSIf8DNaGlpm9XjQto/vqyfryV2gJSqbUTtY7YW30pdr/HP",
-	"l1ykI/X5sURr1EtVzNObnGsbJkT3FzaCsdJEKP8zciYP6JgbSJw4yLm1oN3j//EzP/7H6fF3/Zv//1+O",
-	"P/3L73obuDzjn38AObHT3tnz09PAg2ohQTupom92xeSUa9KgCYx5kdoKSv7RkVIpcNmlUFqw6MbQT6UF",
-	"eDccdQEgE7L8+VnocGkx2YbYa/fM6uE8YeL7HYeqFP26tkTDwJzvwZNWzchoX7WSjBFKshFwDZrhU312",
-	"PVULiYLtFdq9GmJn0zlRHtQ0jhy2QeGjCfAp7covEDXOFQLJG2muIFY6WT/GOW5RJyQzC2NVBppNufMF",
-	"WF6MUmGmbKw0/p3oyv3FeQ3IKy3ojkuTvv2Nn6bcMh7bgqfpEg3xdO4lOmeZMBm38RQ9iBEwgxBEMT5a",
-	"4r/uO8JCZoJS0f+Ca82XTX6EzzzLnQLt3UxBu42nx/HUKQU5gT6PM+jHKgvhJC90rkzLdELeNVORO8LL",
-	"x72ol8yEeznJuI4DplQTWavgeOu4CGFKoHf6zAFIA/4iy0AmkDgnYOoIa8oly7hMuFV6GTmPayDdy2/+",
-	"7eLSKVT/+pTPgY0ApNOvaPw6vy8rjGXG8mWJS0jIrneumUiZEROniZ1P5DCcIeZxlQRSMQcNSUuFVhIn",
-	"6hnLbWHWj4c6PHfOgrSMOxeDcRZPIZ712RXw8riJSDyHIDmwNz9esxTcIYQdyEIasC0QTApAO5+2UyFm",
-	"5gxa8gDof0hMQYyUmrqmjA9/+xAigDlPi5AKXmVBUoleHtFLNfUE+bBSZ/c3mBNpbjz9rOPg+zlosm8b",
-	"bHzGKjKO2PX7txHjREReAuSgyUBDEntzeX71us/OPQLnoMV4iVYVA47sSp4oZ0OihCFhpuLUjRq7EkgB",
-	"Dr6L0t9Rowpzk2uRcd1hpHo9Wwo6x2YSFiwjGwZMn51bliljmZKAAKvCJwg2skrJ3SCQCbRzm8K/wULo",
-	"ZyBrVMhflZxAkQrHHZX0YgtumHu3kqVu+bs5KbgFQN86LLfR/3ffwn0yFPERW7iNiZqLkev6u3ywyJO9",
-	"ab2E5PoW34AWc0goSjUsn7vhdhiGeOOJuzt2Fc53M+RCFnZriag22BoE2jh2m9tbhncLoN0y5wcRih3Q",
-	"Z/G/u7EtbXONZ4Pmp9mwnR+9kl5x4EsznL399zc/9tk1en5MOvCmwniTYXj++vJ7p7uHyHHDUpUPUYM6",
-	"vqTv99EsKkV9Q+E3DdVvX4Ts/U+/9/85/nRU/uoP/+P3g0F/4wN/CHsI35cRmjbweeVc7o6AhkMaEJzu",
-	"HFluTSgwF/VGcdz6TkW1ZZxnbeMZ/3xBT397uv61h17uLu6yVtlu357aDFGwlbd3VSQJZLmyIOPljQ95",
-	"7Clqtz6eazUXCeibDIzhk1LYbH2vtss2hlMdpK7pUfdSQRwatLDhs93py1btSRGrNHAX3fDwwhipCk9T",
-	"w6UCa4PL9pPDTYCvSb6hM5a9PEuAJyTLLOhMSJ722RsyxpcRG6lCxkCJF4fWlAtpjXt8IGHuUFy6A3kO",
-	"kuzvBdeJiVBP0ynAtK3oXwooUM3kWsVQGtNuTw4cXKSkg4AnQcP6+7D54Awqt1QKDKmegZxDqnKo/MnF",
-	"VKXAzt9f9NnwZP7s5GjICgOJs1kpSMj4QI4cKIZfBj1cZNA7GyBFDnq3Q2eHiBg9F2cBSAsOKqlwnkes",
-	"irT0MLh3YlZiAeW2VwN7SUA3XVtH+hHLeDwVEo7doujVsz9rLuMpU5RPIzArsto857Y1UZ0WvKlAu27d",
-	"g+UiDXlXOYVlnPF5PBaQYpLD/eD2zeCz1Zxh0O6z7aPUpT2sr/TXIuOyOkfEDB+Dg7xzwBl3iND9rfyD",
-	"wKo/sk74qzkFhHmIP94qPVH2PTdmoXRyt1BUlQvZJnqCmY7Qrv4KPHWGwprlxC0f8ZUggfNFC6mde4Ry",
-	"8tNG6dx6LYGJ5gkk27MylRyqthDa9w9qctd01s5AdJYTYWu7r1wuUb0R2rQPFQdMpSTRYHZUKjGXN46q",
-	"G5tqOADurwZk118Pl7kq41JbtejWOPF2CyCz+U0J6RsDNuQ3JVQewBwwjtFtLd/w2ZRXTCpmMC/EhKmy",
-	"NiG/KqRUS5xtTRNQfnOfxOaeEO9MjG6yj67cM8GDlYTn4z6d2VE6V9jxohTs7na/h9E2x6tcNrSd986c",
-	"NELJKtz/0eySVl5juJb79HKPjMjGhEA4yN8tmLuOQ9VA6+dxNpvSXC9vuoVW1FtoYeGdTJfEWzsG6Evs",
-	"rJzBh+YDXw4d6ApiEHNINuUcd0gPHjgd2Fht0yEuu4yOoeaLoRMnCaRiBJpbSJeMj5ytSRVGvkpHjRkv",
-	"7acyNZDBhOO3o4F09q9UbC5gQQZvihlgb68bJgES4+uNogfwvAPoCXvg5co3KhPWQoeiKU3hm9KFXcNb",
-	"9QR5Veu+r0qTUPXOe9BGGOtM4IvL8/eMnmMOf/1NPvRWreIevNlZiz24wy1TIeEmg0TwboPmS8iSbkLn",
-	"NaWzjy/eoKnrTF5ckjlrin28+uEVq2uXGFnhGNRtwK4m9+ammvhecR1UBsyJiCSBBNPPhsHnGMD9iKVV",
-	"xtnwhQFWSFPkudJOMdO+3DdNOJbpo9K7ZpP3DCM4E+peUVLtOWYvY0pDni49ya/QNdfONbxyDxx/UMzb",
-	"F2AiNuZpKuSEjXg8c2h9q1X2ahV5u2cQnSy618nbInc9EvcAwZaQmG7QQytw0SzZaCKlkiFhST5xUkQ/",
-	"tA9xZ+tho/OxWgjm3mMj4NZgkEQZ3DjTRQqmzz5MgRV5DhqjKYlTR6NYL3P7jWH/9Z//BxOQYiKVbtSJ",
-	"OevYsj89Z6SAKHedKjkBXRvOaCaPCwPJQDZzl1Oejo+pjon0UeNwf3retoyCRwVtHNwr8ZtArgHt95I+",
-	"2hC4crQvIcFIi7E8BR8WMX32o5KQ5XbJMGNpfN7Z4b1MBL88PX3FNBKAxkCFk00OFOQZOGggOiveahzn",
-	"RdvQexE9hGN4Bc5L+d+YDqHi0acSH3A7u2fQopuOr3kGRLOMmxZC+vvTUFXGsiWp7etKNuNjpbIUXVb0",
-	"+bZUmEa9a5AJhkJ3BdZKuYplKXCff1VjNnR2xtCpz6GTnEMqeBhBXYCAdqI8HqVcBipWVkzB9scuEuMT",
-	"i+/fXX9gJ/NnJ43nh332PY+n5RedLHDKx06FGci6qp42YBlPnUZdur3RIhTn5FKhnPDa+RXjA+nrGdyp",
-	"/FvHGBYVie8sqGOnvgNhJfW+3RaoUjHPA6mYJ54p2j/r02lmrORWwhVeTvYgOrCYmEvGYwySjxD+pE8r",
-	"VwVD13m6ZFa1kvKdNX61LdBg6O+++9eo2za4f+KlDeBMSP/Tsy0Bhjo1EhILDd7ucsM7Kg3ee27FONSi",
-	"LHqwmkvjrOFSq64G1e9cIrt/iixkcPllgqDw1Y1dCW4LkkvLplwmKVDSQ0jnf5j1tHWwJPVTlYD+8iz6",
-	"47Pb8tfBDPRHTE3dp8dhU+EMFnwNnRmCnn0GXAo5GRfpK8Yb7UU8XfClwQIzzvxiVALuZLkwzIDdJbhY",
-	"7yQEeDrqlp6J+3ZGdMb8PppQJPMuUeU9ovD4h5tda2TaT99wO3xF+bOUT/A/Hy/Ygkvb4XSuvX53N2lX",
-	"v7XAIikuJxCK3TX21hka2z+vvEPgdwXsHRvdL0ns6Od7H/hZp6M7Fwvji6HvoUm9vIc9hu1rKkH+9SYX",
-	"2jUTQKumrCstvXUmLBavobC3CiN+A+kz6mXVMVlIWowKW9pITuWqQlonJJVOsN6a0W/4hAtp7EBSES09",
-	"941h5aKjIplAMAwYTvRS1vrzcSImwtLZkHHcKeYND4RcoNV+ASeCv/zx9nf3YukOFwn3G8JiFQJ/1Fas",
-	"Tm4rvdUwk+5e9/9QfItfrNh2H3asABvO4lS6bfcwcrUiaSgsKd+W1Wl8ZuMmG0vu3MdVk856K9ed02Qd",
-	"6vETtl1CXGhhl9duAe+DVW2EK+Wnlelw/v6CKpOH0+wmFXO4+a///L/DiGUCxc1oidwpjCngmOfieAZL",
-	"Fqss4zKp2lWRDLFXo6aaqbU5RfzQ0u92AdAr9gr0hBd2eqJ9fIx8T/pdqiZCDnf44i3GjseBKOdrpXOF",
-	"7b9Ung96LmLoD+RAfpgKwxIVF877LLvg6myJ1YWtOzX++uHDeywD0Ty2FPH6i8LlQA+kA5se+57vCUjM",
-	"w3gDQVgKbkkGMsmVkJYlEKdcQ8KmgD1T3DKpRipZDqRwdiq6w6VrqjDiJlLAUBruMYeYxVw6L/iXQoBN",
-	"lyzRYmxrwepEGx1yoZiQCeQgE3dM313TaN6lGFRUd55zDehg46FI/Tqz48wtd8SOjjxyj45wQ9y3PBwL",
-	"yUhQRUQ4SEZtRLK/FFwnpvxtBsNoIFnjIVX4oi2o6+0L6dTT8KTm2mGfNkJ0Xu3DVxIxHmNEzWHOGcKN",
-	"gvIWtTd2g5VSvi1DWPQT/upbXByrUOUwEXTvtP+sf4plBTlInoveWe9F/7T/gvTWFBmQzkOgOxZSODgf",
-	"N02tXJH4c9IBld9F4mgVX7ig59/XBo+PSfxZJcu9ur9XNFehNUi7IV27VwHK2nIbQ1ztt30quDVq4vnp",
-	"6YO1tr9utaav5axK0GJggceQREylCfN0baoOd0eInI01mGn5R0/alAfzLYSPOH1COO6q690YBaOtrwfs",
-	"NfUBaqpKDv/86fZT1DNFRh5n74pOjpag89UoEKr0sWddT7SsgV3LJwZ9u8JOe6h6iMzHWGcWJO+Vc5C/",
-	"yqVZgDbs+elzbHtAu1ZpFDkty7aM0IKTlMjicskwuDeQI5jyuVCFZgssSxxBw6g9dm6oZyymNI9T6LML",
-	"YwonFjg2oKRCzpzY9rD0AyByDW5Rgw0mTtyd04K+BNQJOjSYsVN6qlUxmbLr63fUKiZVnbfAoJUBS50/",
-	"PqblTjitGq7arN8u1rsHz2+isHBF4E68+TyAzjiGHOehrCCxyvCUjonjlpfPv+vaXvWpk9VhISv03KLg",
-	"a0DuzGtedvB2eN1Aq6iHugUwFvkdCPitAsKnJQ+vqWeRGlFe0nc3I6oxFwhfeXZ4KfiTVpQ0JHQrzQo5",
-	"k2ohK4HhRESrCkbIhLJrhTBYQBoNJA49gNoU82bUCKpC6UQYbDH2pdBVWpzsJD9u58HJ+fvPfqJP0zJz",
-	"JgwvVc9mslaF3UjX7u9rFPay20D3OrCB3s1nbY2o2UcPuc/4Xmk0KHY4LrnJEwic9C9gX9M6H6lY7GA8",
-	"1Yosdcwhqi1jDBgdGJaYhTeg2QimQiZ7ArXUtd3624kJ0pP4FSGZyLCmhkrOJJW+mqpR04d1nEim4Vgw",
-	"kCMezyZaFTIhH6qh7B0bVh2eS7CvcPzVEMvm26HBYUiDlvUVBxLfq+UbO0nwZ48lwb2dwnws5s5y/LvH",
-	"mc/VwHqZxa1NvYOIVxrM0Qx8Ir1aru1OEhYjsclxk7APY+j22fkjW7kBTlotDjkYT3VVofxz26TkMa4J",
-	"wS3ktYsL9VpJU2QejygU0WaZgYyYAevH2MGispMorHN0ROrcUFxlIKuyo9VYDlnRwrAFOjwqA+r/BVNl",
-	"kZdsBKmAOfhcQ5lIoMowrbKqsTgFPseJCVNfojGj2YDexOCpc4qQsgcygTFwS/XFA3nlJ4/RrDw5Yzw1",
-	"iuVazcFQFE6lGKOr2cjPs4I6YzGQVFSFwyS1c+gr9SLGZeKkUUnig4I4kxGRj/Jpxf8v44EjrRaGytEs",
-	"y0H7WZUIEgRi5HUeMzwDZqY8B8YNQw+ki+sO7QAGi6ueaGyGzOHkFZEsScRGFIZNlISGnju80qKQtTCl",
-	"39EailiqsQJp39NIs4zRKsUWwGdb5If1krt6FSO6fDfvlkaKHFdpsbAMIUcqVokvVURuQcWDk0n+hHHn",
-	"QnshU+YiUxXPfPkjH8jFVKRQBmr96E+lNcS2rD0oC0ycWEHcLYQhO9+tVHK9hTRFlealA4PPPLaNkpUl",
-	"jamBhGkxmZJwOGeL6ggUo6t9QMyPSsVyX2JEz2BBJlWBD6RIKJiWpst6Bt4ebiB2BjcUdoCXG1ngA3Fy",
-	"IM/8yHy8zf859xip8vmPyasl1SKhdDLqYSxNJcdCZ2tE2dTYSlK6lflu3wBDT6s+2S4/13fSHhDF/gsB",
-	"GDfGISGvlw26t1Hv29MXj7CBc1amtOIlyeTGJjZg5wcxB+lw4uRG2fBbHkCk7o0aHR4HhBBfJWdODHAd",
-	"NzGzGkBxfwbDqDydqcJSUXy5AOOxVm4HaVrnphp+NVW+Gl/v2EY7Le6bwQymXDTPwGLr489fesLt4JcC",
-	"cNoN1RP0fumtioXmvOE9ewrDn8Cem9YY4yo5guWQ/LPIiqx39sx/wf8UaJb7dE9yXu0K9YDatZqARPb2",
-	"rlC/bDjPtTJNmdsYGaV8K3IKHoxlY6FLv/uuIdeDxJGIyGp6nQsqzbVkX68EtWp2QelmPLu0S7s3BJWs",
-	"Kk2NsaAp6gRL5B8+IQ1PvdLYMSGSPruCMWiQsc+dC6fVJRuulsL3m8Xl2J7m/DNhsea4yFPFE7+AoZHG",
-	"Tq/7ldFo486xzqdOlMuETZwXJNViCpqyQ8NvT18MsTyTDpBAnqolVhNM0bVgoyKegXUey1hMCk2BLXK1",
-	"6q0NpDNQFqih3Aatwn/8RNVApr6c2ou+CxsVwYzSRzxfo7tykyGSFakVOdf2xPkxx04wbuIrh6lWAdFI",
-	"SJqwtTlnjO/dLTn8cKG0ZsNpIBeCUvvxuDLqvXz24nGMIgf9yjepMM5GKllG1V0FXE/g7nbRw6r/7ox4",
-	"hcJKSnh2aHCanx/T4Mp1GVhWSq2KQGIe5/wLEnzErvg/lnJb95dskH/+507Rd3R0bpYynmolVWH6R0cY",
-	"ES/7HtCuipVOfCHClOMQUy+EccDQqzLcQJdmJCSfLFtwYatABYZAqsL/Pnuv0pQN//I9td/QHk++iOR2",
-	"SFNQcRR4YWOVEbE4c5mM1znWmGou0rp8CiNFWC2mPQ7Y8NvT50OqbOJyyTKl4Yz5uYdo9C7Ah0ajgaSy",
-	"JypU5enMl6fWtVqgncTss/NG74L3T5kpsOTKMG4G0s/MPGM0Ami4MjGoKm9CkwvcsSxO20TbfMTjmRqP",
-	"B5JuaBCWTcQcDCtyfC3jeoaVtjRKKiRtK9WzbpOtyJdY5TUaK/vP6bQcuKXYbYnRynHAGNIMlg7ZpAkR",
-	"TVpMhORpRTNo1JZUgMoOi3n77F0mLK4t7ECSwpKKJZAUFW86FPE09Y1Pbqt0vUVt5V3UI9qOHdd0mZHf",
-	"fruuBz4dxg1ea37bPXD80N/3DToBafXvOAysz95iNlcjnrH5rAKnQy0JqxB6HcYIv4X0UbEI47M4FpXq",
-	"fwSZHOjIUOWdxFtnHlWRPYAr3S2SEYqNERbYiEtRnq0yGOVbt8fWYklfGvuNaTLnuW8qrH71jWkIaseV",
-	"fsYAN372RkhI/AVsHRM6kM/uPZiwBVDqrDtjmCoGNr9U3US0M2rfSdikTsNebs4x+OFlk0g2ernbZhh+",
-	"8uSyaBb+dwVe/CUf1aMHxGajmjyM0UWj3PwhnMIuFLW+1eSTRriiiw3bVf1BqP4gjP2pfuwxIIodCB1Q",
-	"dY5tUwCYqFLFQle3fTlZe2hf/Kd2gKjte4dh3+xucLwTtD0xSKqBW+VWccaewWtisPF8Pe60cq/FgYLa",
-	"HbdnPLJ/uJHn6haK+5Za3En8PlJ9hkkLDOxaPgO5B7WWVRYNsdRBl225cPLFffGWyDQFG+gie+cIk+Zj",
-	"MOq7NVE9Rj5qRNe8YDJlRZIlb4Kn6UDG3MQ8KTsp6iiKBizwH6VQZphass7fJ+eTRHgrn2HDl6cvh35G",
-	"PbTv7BsVzhsb4NNqIf3TL4ZRbcwn/jpA4f0UPyC/rEs0LNF8ETIi3iCANmifl6GGVfdOcg/Ce7H9pfo+",
-	"xvtbCp0URidpt0GH2kUwHN0hEYNG4CrKUb5WvlQ9jQJt9FVjL2JGOSu9bBdrpBNzrUZkkDsS77AKfx22",
-	"xOGw/q7ZxlPCcoPK22ou+ve7DcYdLlH6FJRhJ75dznS6Gz+i21ZFtFlh+ChF756S5dRcgGVaY/G5nMhM",
-	"WesxXRDinhVyIDkO6UPbRBW2eSEfxhHKG/kCROesH7Jj721trcx/ycVNefzdJvCXF99tzrlU6+6Sc8Fj",
-	"PTUibrHYN6bSU1+djrtsxPMk880ufXZ0hDe94XB0+GyJAk11521VMUXDeTBFwiA1QIVlA6nW7iFkjWsI",
-	"RbMOn+6rosBVgHLJxvBUc3c79H73sT270/jVr575WL2dMsA6BN6kz4YzWOL4EVPdwNZ/XGP3qdgcF8YU",
-	"WHjrOXYvm7bSBydfZrC8SDYauU2Ow0JEtXAYmEFe1StnOSRsWF94Omze6TWQtHJSFUNSYNH3ruGwTGN9",
-	"mb6xfGkqvcLJ9g2UJbovNdhtm615da/GkaeEd9+bsh3xjyWpo+DKSFb3j34FKHclf3//MwayAuGGJcq/",
-	"VRbrb1nsPbPYBL/Hjk7sxYaPlPh+Swncf5bM9rVPZ7dz2XsIrXbmGkeD1Z6TH8e1NU5bSoDGdWadYVsf",
-	"jDmk59q4cW2b6/qNYeWmn5r9f8lFWm4O46zVnJVQtKy68u3r+wFX1aWqwOKUi6xVklVeplhdvVpdj0k2",
-	"jA9sCUPhMO/tUqK9rA2uQnpYqj1J1Qgvti2k+KWAM8b9IgNZVu/iNgiAfDU116g+970kCBTa6RCnHQwp",
-	"hq804yM1D9o950nyprxD8BCx7mr9rxTlLm8eDHgABNuoqqFvNb39mjyAR4yoV1zAVkg4okoZpYO0vE/s",
-	"nTiTVTdfrkuSjUL+5Av9Z6ODsgMvdQSsG8y03YNIgZtfiQuBR9mMlqgz09wFtNNHEAM11T7JcPBGeH5N",
-	"dyxpao39127ewowqGW/fDo+IbdyI7OVLxpc+nVsOhI38FKNaPeK8WLp0eSCVxNKzu2jI5gzcAynJ0Jjd",
-	"R25z6mYQ2lzy3zMmdslntVRrG7Hlnd/3UEEnyUxkJ1pZTkro18TP4b5ujLoa3/xJ6R2E6tGRt8KOjnyl",
-	"36rt7VGwEHY6kMKWVcOMJ75ceNi46nrYZ9diIp1VV9eJLoSNp2wJ9qy03Aey7COn9zBvLemuemoyLdNS",
-	"uVaZqgYLeIPR7d8PvrKVXKEkOffjamkT1YRCYyE3TEnmL/vHTBhtDLvUxURiuQt2RDhvI9cq5xOEWcZn",
-	"YPCuVr2sivIw7+9hOOE5VgXj3fw+sIobS3CnFAdNhcHuUB83jQtjVQaazaRaEJysYmQWsQaUl2Dv4WRc",
-	"IYW/mYksGF19DCl23sKaw02rsOWfW0gJaaniNuUxDtVEElgJ5e4tnIgD/lvIpSswKp2XreBTnqYgJ8A+",
-	"/O1DJWZkEjnG5Sxzlkrki+VryTSQtZd/XtXul91LkiYXnjVFGVWj4d1TJNWG9UXfQ0YbHOEsj1KcjB1h",
-	"VJlyP7zCj143U7Uw9+BR6rT+2pZ4PIV4xjSXr5iQJofYsmE1DomuuW4A6VfAu6/xwGVwqSY9qRZ78G6j",
-	"BefrxtA+lHVfucghxSm1pnELDu1zGFUF/Fhuyut5F9JY4MlAqnEjH0VaUtVtPv6mbq/3yhElVJUmk7JO",
-	"ZCC5XDp1nBfWN5zUxhvZHtiEk/MJVDNR7EJVg4Ez0BNInKPBCz/Uodml6B/zU5EbA4R95Updtdoc2isT",
-	"NtFc4lV+NANCSWjc+4PsnUIDKK11aPQwW0yVd4J8wdZAGmcZ8LTP6nHelYzw1G9QKIjOiUjXIOtkVEeb",
-	"z28tMw/eMvO0s1cP0u2yoQkb3faqs8sEBm3vnsgJt8F01yF+vTaVy9KA99cEPbHQ0xVgcg3bL5NW351z",
-	"CsqLrWjzu2ffokMk16ODNcqs01dViL0xVXhZPfWwUx6aH9/t9m9/L/7WQQ/VyrtUHa4mIuu3nxoVn1fD",
-	"jFDr1STqJ1UbXzLfjOEIiWNMnkJCspFQwbsCGzcBNnwNHAWIgzfcWWiUbhksmSoDA4nNLmgP4CQ4rMvF",
-	"GXPSz1tMcYI32krOsHAU4LjfnZGMJOy//njhr0qAnEbmYUszpKYkAjZaMqzqpw5cwy7/xvwQiY7yxpJA",
-	"D9ln47/xlfKPFQt2liD+lmq8S6rRGbV+7FTJFjg1ZC/bA8eikiyoGIjbxkiroFzYohpOvvj/XiS3J83J",
-	"PN36Yq85R/7u5eAUot7Fj39+97deVF1QV/78vwo5C15Pd79BR8+3DjqKVoXaWw1wjLXVY5Fa0AyHz/nb",
-	"LCM0LUCjpeHES5+dj+iCR83wJtb2ZAB/R30haa1ySl3XeKjucVA7wkWNxwY6ANOExOnTG/l05S8cvax7",
-	"ox9w+FP58NOzY8trVnFCqmQXcqQ+O2pyHLEyouprGgFhK7aSJAc1ZlsSi65k/spB3wc6d9TLi4DMPTfO",
-	"w/Sa+Z2/gvphLh9C6N0UBvRN+Da8/a7nby/3ta8b2mDL+CRx6Qs87r1BiE5Me9BQnC3yYS8FbjKbH7dv",
-	"Wi9LhkLlPx5E15cf3rdmHG/vXE0EXsvP3KvN216qLoNHg+cVzJWflbMbPKNfsay4BtuF04M3ZDXJbsOl",
-	"/c9XTxP1FlpYeCfTpRcKK2LlnheYha5TaVGtATTYqLDhcYm3mqtNN3TuRsGtoitqwNd0Xximwin/jhcj",
-	"YH8fHpbuci8TGJ4I63vEuoQMxea3uAP0zCElOX6iq9L8usCzPSre8A/s9y9PT5m/x4EJmRc2Yi9Pn7FC",
-	"Nnp+IXG/fEEzPFhJrO53LzFt47OkL0+/w9aCVMT2D/sSACF6NabJMi75BHyDzuF6pHbuHzpPkssy2nqg",
-	"6u32jeiPHT35jU4PRKcbxdPJF2dyrjVxrnZMZmoODfLbqiN+Q9fTEithe4pQf29jqqznDRXTHlRmNT+x",
-	"l9j6jWQfRcL48fJf/P8uNqdqL6t5eQczhtYiY09yqODGLgFdhbnWxgs+mVBWie57S5agJXTJ9cwj8Ap4",
-	"8nToJWJSLXC68BPs1NSzRu2FJrjtnPAIcHKzl/7kS/3DJiZ/oxYyVTwpwbrSBL8zElVswR4bq4FnbWRu",
-	"b3xfQ+AbiBVOpK4ncI+WFkzExkrH2IhCu34SSP1VsHZ47SYNbVw+59aCdgv8x8+nx999+vIsenH7uz2i",
-	"4SFy9rm2rx0NfzDRGYpwXao5rIq0hwqH1/DbOSHZHkFB73/twPcOEr+s5xKSxj+BsUL6ICod4jFtSIfT",
-	"ewXDnRPw6NNQ3ms1F25rVX1edbnxw7sJ4Y99pThH12a6K0fd37GIB1+D5BWzkOVKc728ad7HR9lyvCYi",
-	"Xa7NMetFvpQXT/Sax1M4fk3XTq47Q+81Xo1gqrso/MWU9S1fVXF08wO7E8bto7tZexhLFYrQYkIfyMd+",
-	"cy3m3EIVA8YbGEpk1BHhLjcJd6Dn4WsUEpj3ol6h095Zb2ptbs5OcNJWAvPjKWjlvtnXMuu7B9eLLVIV",
-	"87S1wNnJCf5yqow9+9fTP5723DH9zsoZcOWNYOsL/rXIuGwNYFSy39DWRfCtDyC5tKbProJl/1HZI+Pr",
-	"/RsLNkC1vuw1laGuLVs7q+sL+lrU20+3/y8AAP//",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,
