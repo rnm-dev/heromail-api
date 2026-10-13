@@ -63,8 +63,11 @@ func ScanAttachments(raw []byte, selected string) (items []ReceivedAttachment, d
 			}
 			return
 		}
-		if disposition != "attachment" && name == "" {
+		if disposition != "attachment" && name == "" && contentType != "text/calendar" {
 			return
+		}
+		if name == "" && contentType == "text/calendar" {
+			name = "invitation.ics"
 		}
 		name = decodeHeader(name)
 		name = strings.Map(func(r rune) rune {

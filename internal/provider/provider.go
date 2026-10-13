@@ -15,13 +15,15 @@ import (
 // It mirrors the emails table without depending on it: a provider must not
 // need a database row to do its job.
 type Message struct {
-	Cc       []string
-	Bcc      []string
-	From     string
-	To       []string
-	Subject  string
-	HTMLBody string
-	TextBody string
+	Cc             []string
+	Bcc            []string
+	From           string
+	To             []string
+	Subject        string
+	HTMLBody       string
+	TextBody       string
+	CalendarICS    string
+	CalendarMethod string
 
 	// Headers are extra headers to set, e.g. Reply-To or List-Unsubscribe.
 	// Implementations may reject headers they generate themselves.

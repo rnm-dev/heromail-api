@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/rnm/heromail/backend/internal/account"
 	"github.com/rnm/heromail/backend/internal/calendar"
@@ -39,6 +40,15 @@ func (r calendarResponse) VisitUpdateCalendarEventResponse(w http.ResponseWriter
 	return r.write(w)
 }
 func (r calendarResponse) VisitDeleteCalendarEventResponse(w http.ResponseWriter) error {
+	return r.write(w)
+}
+func (r calendarResponse) VisitGetCalendarInviteResponse(w http.ResponseWriter) error {
+	return r.write(w)
+}
+func (r calendarResponse) VisitRespondCalendarInviteResponse(w http.ResponseWriter) error {
+	return r.write(w)
+}
+func (r calendarResponse) VisitImportCalendarInviteResponse(w http.ResponseWriter) error {
 	return r.write(w)
 }
 func calendarResult(code int, body any, err error) (calendarResponse, error) {
@@ -110,6 +120,9 @@ func (s *Server) CreateCalendarEvent(ctx context.Context, r CreateCalendarEventR
 	if r.Body == nil {
 		return calendarResult(0, nil, calendar.ValidationError{Message: "Пустое событие"})
 	}
+	if err := s.calendarSender(ctx, ws, user, r.Body.Organizer); err != nil {
+		return calendarResult(0, nil, err)
+	}
 	out, err := calendar.NewStore(s.pool).Save(ctx, ws, user, "", *r.Body)
 	return calendarResult(201, out, err)
 }
@@ -121,8 +134,37 @@ func (s *Server) UpdateCalendarEvent(ctx context.Context, r UpdateCalendarEventR
 	if r.Body == nil {
 		return calendarResult(0, nil, calendar.ValidationError{Message: "Пустое событие"})
 	}
+	if err := s.calendarSender(ctx, ws, user, r.Body.Organizer); err != nil {
+		return calendarResult(0, nil, err)
+	}
 	out, err := calendar.NewStore(s.pool).Save(ctx, ws, user, r.EventId.String(), *r.Body)
 	return calendarResult(200, out, err)
+}
+func (s *Server) calendarSender(ctx context.Context, ws, user, address string) error {
+	if strings.TrimSpace(address) == "" {
+		return nil
+	}
+	boxes, err := s.inbound.MailboxesForWorkspace(ctx, ws)
+	if err != nil {
+		return err
+	}
+	for _, box := range boxes {
+		if !strings.EqualFold(box.Address, address) {
+			continue
+		}
+		allowed, err := s.inbound.CanAccess(ctx, user, box.ID)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			break
+		}
+		if err = s.domains.AllowsAddress(ctx, ws, address); err == nil {
+			return nil
+		}
+		break
+	}
+	return calendar.ValidationError{Message: "Выберите доступный ящик на подтверждённом домене"}
 }
 func (s *Server) DeleteCalendarEvent(ctx context.Context, r DeleteCalendarEventRequestObject) (DeleteCalendarEventResponseObject, error) {
 	ws, user, err := s.calendarScope(ctx, r.Slug)
@@ -131,4 +173,23 @@ func (s *Server) DeleteCalendarEvent(ctx context.Context, r DeleteCalendarEventR
 	}
 	err = calendar.NewStore(s.pool).Delete(ctx, ws, user, r.EventId.String(), r.Params.Version)
 	return calendarResult(204, nil, err)
+}
+func (s *Server) GetCalendarInvite(ctx context.Context, r GetCalendarInviteRequestObject) (GetCalendarInviteResponseObject, error) {
+	out, err := calendar.NewStore(s.pool).Invitation(ctx, r.Token.String())
+	return calendarResult(200, out, err)
+}
+func (s *Server) RespondCalendarInvite(ctx context.Context, r RespondCalendarInviteRequestObject) (RespondCalendarInviteResponseObject, error) {
+	if r.Body == nil {
+		return calendarResult(0, nil, calendar.ValidationError{Message: "Выберите ответ"})
+	}
+	out, err := calendar.NewStore(s.pool).Respond(ctx, r.Token.String(), r.Body.Response)
+	return calendarResult(200, out, err)
+}
+func (s *Server) ImportCalendarInvite(ctx context.Context, r ImportCalendarInviteRequestObject) (ImportCalendarInviteResponseObject, error) {
+	ws, user, err := s.calendarScope(ctx, r.Slug)
+	if err != nil {
+		return calendarResult(0, nil, err)
+	}
+	out, err := calendar.NewStore(s.pool).Import(ctx, ws, user, r.Token.String())
+	return calendarResult(200, out, err)
 }

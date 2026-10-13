@@ -17,9 +17,11 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/rnm/heromail/backend/internal/calendar"
 	"github.com/rnm/heromail/backend/internal/email"
 	"github.com/rnm/heromail/backend/internal/maildomain"
 	smtpprovider "github.com/rnm/heromail/backend/internal/provider/smtp"
+	"github.com/rnm/heromail/backend/internal/ratelimit"
 	"github.com/rnm/heromail/backend/internal/secrets"
 	"github.com/rnm/heromail/backend/internal/storage"
 )
@@ -92,6 +94,14 @@ func main() {
 	domains := maildomain.NewService(maildomain.NewStore(pool), nil, sealer, maildomain.Config{})
 
 	worker := email.NewWorker(email.NewStore(pool), sender, blobs, domains)
+	calendarQueue := email.NewEnqueuer(redisAddr)
+	defer calendarQueue.Close()
+	calendarMailer := email.NewService(email.NewStore(pool), calendarQueue, nil).WithDomainGuard(domains)
+	calendarLimiter := ratelimit.New(redisAddr)
+	defer calendarLimiter.Close()
+	dispatchCtx, stopDispatch := context.WithCancel(ctx)
+	defer stopDispatch()
+	go calendar.NewDispatcher(pool, calendarMailer).WithLimiter(calendarLimiter).Run(dispatchCtx)
 
 	mux := asynq.NewServeMux()
 	mux.HandleFunc(email.TypeSend, worker.HandleSend)
@@ -103,6 +113,7 @@ func main() {
 	go func() {
 		<-stop
 		log.Print("shutting down, waiting for in-flight tasks")
+		stopDispatch()
 		srv.Shutdown()
 	}()
 

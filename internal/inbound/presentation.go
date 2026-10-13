@@ -23,6 +23,7 @@ type Presentation struct {
 	Omitted            bool
 	InReplyTo          string
 	References         string
+	Calendar           *CalendarPreview
 }
 
 func (s *Store) Presentation(ctx context.Context, mailboxID, messageID string) (Presentation, error) {
@@ -101,11 +102,18 @@ func Present(raw []byte) Presentation {
 			}
 			return
 		}
+		mediaType, _, _ := p.Header.ContentType()
+		if mediaType == "text/calendar" {
+			data, err := io.ReadAll(io.LimitReader(p.Body, (64<<10)+1))
+			if err == nil && len(data) <= 64<<10 && out.Calendar == nil {
+				out.Calendar = parseCalendarPreview(data)
+			}
+			return
+		}
 		cid := strings.Trim(p.Header.Get("Content-ID"), "<> \t")
 		if cid == "" {
 			return
 		}
-		mediaType, _, _ := p.Header.ContentType()
 		switch mediaType {
 		case "image/png", "image/jpeg", "image/gif", "image/webp", "audio/mpeg", "audio/ogg", "audio/wave", "audio/wav", "video/mp4", "video/webm":
 		default:

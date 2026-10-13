@@ -1326,6 +1326,62 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /calendar/invite/{token}:
+    parameters:
+      - { name: token, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getCalendarInvite
+      security: []
+      responses:
+        '200':
+          description: Invitation for one recipient
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CalendarInvitation' }
+        default:
+          description: Invitation unavailable
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    post:
+      operationId: respondCalendarInvite
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CalendarResponseRequest' }
+      responses:
+        '200':
+          description: Response recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CalendarInvitation' }
+        default:
+          description: Response failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /workspaces/{slug}/calendar/imports/{token}:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/Slug' } }
+      - { name: token, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: importCalendarInvite
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: Invitation in the user's personal calendar
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CalendarEvent' }
+        default:
+          description: Import failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
 components:
   securitySchemes:
     session:
@@ -1379,6 +1435,26 @@ components:
       required: [timezone]
       properties:
         timezone: { type: string }
+    CalendarInvitation:
+      type: object
+      x-go-type: calendar.Invitation
+      x-go-type-import:
+        path: github.com/rnm/heromail/backend/internal/calendar
+        name: calendar
+      required: [event, recipient, response]
+      properties:
+        event: { $ref: '#/components/schemas/CalendarEvent' }
+        recipient: { type: string, format: email }
+        response: { type: string }
+    CalendarResponseRequest:
+      type: object
+      x-go-type: calendar.ResponseRequest
+      x-go-type-import:
+        path: github.com/rnm/heromail/backend/internal/calendar
+        name: calendar
+      required: [response]
+      properties:
+        response: { type: string, enum: [accepted, tentative, declined] }
     CalendarEventInput:
       type: object
       x-go-type: calendar.Input
@@ -1395,6 +1471,9 @@ components:
         start: { type: string, description: YYYY-MM-DD for all-day or local YYYY-MM-DDTHH:mm }
         end: { type: string, description: Exclusive end date or local date/time }
         version: { type: integer, minimum: 0, description: 0 on create; current version on update }
+        organizer: { type: string, format: email }
+        attendees: { type: array, maxItems: 20, items: { type: string, format: email } }
+        reminder_minutes: { type: integer, enum: [0, 10, 30, 60] }
     CalendarEvent:
       type: object
       x-go-type: calendar.Event
@@ -1411,6 +1490,15 @@ components:
         start: { type: string, description: YYYY-MM-DD for all-day or local YYYY-MM-DDTHH:mm }
         end: { type: string, description: Exclusive end date or local date/time }
         version: { type: integer, minimum: 0, description: 0 on create; current version on update }
+        organizer: { type: string, format: email }
+        attendees: { type: array, items: { type: string, format: email } }
+        responses: { type: array, items: { type: object, properties: { email: { type: string }, response: { type: string } } } }
+        reminder_minutes: { type: integer, enum: [0, 10, 30, 60] }
+        uid: { type: string }
+        sequence: { type: integer }
+        status: { type: string }
+        role: { type: string, enum: [organizer, attendee] }
+        invite_token: { type: string, format: uuid }
         id: { type: string, format: uuid }
         start_at: { type: string, format: date-time }
         end_at: { type: string, format: date-time }
@@ -1767,6 +1855,7 @@ components:
           type: array
           items: { $ref: '#/components/schemas/ReceivedAttachment' }
         attachments_omitted: { type: boolean }
+        calendar_preview: { $ref: '#/components/schemas/CalendarPreview' }
 
         folder: { type: string, description: Persistent IMAP folder name. }
         id: { type: string, format: uuid }
@@ -1794,6 +1883,18 @@ components:
         size_bytes: { type: integer }
         read_at: { type: string, format: date-time, nullable: true }
         received_at: { type: string, format: date-time }
+
+    CalendarPreview:
+      type: object
+      required: [method, uid, title, start, end, organizer, unsupported]
+      properties:
+        method: { type: string }
+        uid: { type: string }
+        title: { type: string }
+        start: { type: string }
+        end: { type: string }
+        organizer: { type: string }
+        unsupported: { type: boolean }
 
     ApiKey:
       type: object

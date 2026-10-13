@@ -89,6 +89,19 @@ func TestSendDeliversBothBodies(t *testing.T) {
 	}
 }
 
+func TestCalendarAlternativeKeepsMethodAndUID(t *testing.T) {
+	s, fake := newTestSender(t)
+	ics := "BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:meeting@example.test\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+	_, err := s.Send(context.Background(), provider.Message{From: "organizer@example.test", To: []string{"guest@example.test"}, Subject: "Meeting", TextBody: "Please reply", CalendarICS: ics, CalendarMethod: "REQUEST"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := fake.received()[0].data
+	if !strings.Contains(data, "text/calendar") || !strings.Contains(data, "method=REQUEST") || !strings.Contains(data, "UID:meeting@example.test") {
+		t.Fatalf("calendar MIME missing: %s", data)
+	}
+}
+
 func TestSendSingleBodyIsNotMultipart(t *testing.T) {
 	s, fake := newTestSender(t)
 

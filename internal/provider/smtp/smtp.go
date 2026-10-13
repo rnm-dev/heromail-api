@@ -165,6 +165,12 @@ func (s *Sender) Send(ctx context.Context, msg provider.Message) (string, error)
 	default:
 		m.SetBodyString(mail.TypeTextPlain, msg.TextBody)
 	}
+	if msg.CalendarICS != "" {
+		if msg.CalendarMethod != "REQUEST" && msg.CalendarMethod != "CANCEL" && msg.CalendarMethod != "REPLY" {
+			return "", fmt.Errorf("%w: invalid calendar method", provider.ErrInvalidMessage)
+		}
+		m.AddAlternativeString(mail.ContentType("text/calendar; method="+msg.CalendarMethod), msg.CalendarICS)
+	}
 
 	for _, a := range msg.Attachments {
 		if err := m.AttachReader(a.Filename, a.Content, mail.WithFileContentType(mail.ContentType(a.ContentType))); err != nil {

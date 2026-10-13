@@ -39,15 +39,17 @@ const (
 
 // Email is one outbound message, and the unit of idempotency.
 type Email struct {
-	ID          string   `json:"id"`
-	WorkspaceID string   `json:"workspace_id"`
-	FromAddr    string   `json:"from"`
-	ToAddrs     []string `json:"to"`
-	CcAddrs     []string `json:"cc"`
-	BccAddrs    []string `json:"bcc"`
-	Subject     string   `json:"subject"`
-	HTMLBody    *string  `json:"html,omitempty"`
-	TextBody    *string  `json:"text,omitempty"`
+	ID             string   `json:"id"`
+	WorkspaceID    string   `json:"workspace_id"`
+	FromAddr       string   `json:"from"`
+	ToAddrs        []string `json:"to"`
+	CcAddrs        []string `json:"cc"`
+	BccAddrs       []string `json:"bcc"`
+	Subject        string   `json:"subject"`
+	HTMLBody       *string  `json:"html,omitempty"`
+	TextBody       *string  `json:"text,omitempty"`
+	CalendarICS    string   `json:"-"`
+	CalendarMethod string   `json:"-"`
 
 	InReplyTo  string `json:"-"`
 	References string `json:"-"`

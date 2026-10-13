@@ -164,16 +164,18 @@ func (w *Worker) Deliver(ctx context.Context, emailID string, retried, maxRetry 
 		headers["References"] = claimed.References
 	}
 	messageID, sendErr := w.sender.Send(ctx, provider.Message{
-		From:        claimed.FromAddr,
-		To:          claimed.ToAddrs,
-		Cc:          claimed.CcAddrs,
-		Bcc:         claimed.BccAddrs,
-		Subject:     claimed.Subject,
-		HTMLBody:    deref(claimed.HTMLBody),
-		TextBody:    deref(claimed.TextBody),
-		Attachments: attachments,
-		DKIM:        dkim,
-		Headers:     headers,
+		From:           claimed.FromAddr,
+		To:             claimed.ToAddrs,
+		Cc:             claimed.CcAddrs,
+		Bcc:            claimed.BccAddrs,
+		Subject:        claimed.Subject,
+		HTMLBody:       deref(claimed.HTMLBody),
+		TextBody:       deref(claimed.TextBody),
+		CalendarICS:    claimed.CalendarICS,
+		CalendarMethod: claimed.CalendarMethod,
+		Attachments:    attachments,
+		DKIM:           dkim,
+		Headers:        headers,
 	})
 	if sendErr == nil {
 		if _, err := w.store.MarkSent(ctx, claimed.ID, messageID); err != nil {

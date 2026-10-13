@@ -197,6 +197,9 @@ func (s *Server) GetMessage(ctx context.Context, request GetMessageRequestObject
 	out.ReplyTo = &presentation.ReplyTo
 	out.InlineMedia = &presentation.InlineMedia
 	out.InlineMediaOmitted = &presentation.Omitted
+	if p := presentation.Calendar; p != nil {
+		out.CalendarPreview = &CalendarPreview{Method: p.Method, Uid: p.UID, Title: p.Title, Start: p.Start, End: p.End, Organizer: p.Organizer, Unsupported: p.Unsupported}
+	}
 	return GetMessage200JSONResponse(out), nil
 }
 
