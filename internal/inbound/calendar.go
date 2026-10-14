@@ -78,7 +78,10 @@ func parseCalendarPreview(data []byte) *CalendarPreview {
 			}
 		case "ORGANIZER":
 			if inside {
-				out.Organizer = strings.TrimPrefix(value, "mailto:")
+				out.Organizer = value
+				if len(value) >= 7 && strings.EqualFold(value[:7], "mailto:") {
+					out.Organizer = value[7:]
+				}
 			}
 		case "RRULE", "RDATE", "EXDATE", "RECURRENCE-ID":
 			if inside {

@@ -24,6 +24,8 @@ type Presentation struct {
 	InReplyTo          string
 	References         string
 	Calendar           *CalendarPreview
+	// CalendarICS is the raw part behind Calendar, for an explicit reply.
+	CalendarICS []byte
 }
 
 func (s *Store) Presentation(ctx context.Context, mailboxID, messageID string) (Presentation, error) {
@@ -107,6 +109,9 @@ func Present(raw []byte) Presentation {
 			data, err := io.ReadAll(io.LimitReader(p.Body, (64<<10)+1))
 			if err == nil && len(data) <= 64<<10 && out.Calendar == nil {
 				out.Calendar = parseCalendarPreview(data)
+				if out.Calendar != nil {
+					out.CalendarICS = data
+				}
 			}
 			return
 		}

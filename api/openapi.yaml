@@ -989,6 +989,32 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /workspaces/{slug}/messages/{messageId}/calendar-reply:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/Slug' } }
+      - { name: messageId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [inbound]
+      operationId: replyMessageCalendar
+      summary: Answer an external calendar invitation from the receiving mailbox
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CalendarResponseRequest' }
+      responses:
+        '200':
+          description: REPLY queued to the organizer
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CalendarPreview' }
+        default:
+          description: Reply failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /workspaces/{slug}/messages/{messageId}/folder:
     parameters:
       - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/Slug' } }
@@ -1895,6 +1921,10 @@ components:
         end: { type: string }
         organizer: { type: string }
         unsupported: { type: boolean }
+        attendee:
+          type: string
+          description: Receiving mailbox address that may answer this external invitation.
+        response: { type: string, enum: [accepted, tentative, declined] }
 
     ApiKey:
       type: object
