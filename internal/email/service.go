@@ -376,3 +376,7 @@ func describeValidation(err error) string {
 	}
 	return msg
 }
+
+func (s *Service) SentForUser(ctx context.Context, userID string, limit, offset int) ([]Email, error) {
+	return s.store.SentForUser(ctx, userID, limit, offset)
+}

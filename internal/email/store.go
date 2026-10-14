@@ -221,6 +221,14 @@ func (s *Store) ByIdempotencyKey(ctx context.Context, workspaceID, key string) (
 // SearchForUser searches outbound mail in every workspace the user belongs to.
 // strpos treats %, _ and backslashes as ordinary characters, unlike ILIKE.
 func (s *Store) SearchForUser(ctx context.Context, userID, query string, limit int) ([]Email, error) {
+	return s.visibleForUser(ctx, userID, query, limit, 0, false)
+}
+
+func (s *Store) SentForUser(ctx context.Context, userID string, limit, offset int) ([]Email, error) {
+	return s.visibleForUser(ctx, userID, "", limit, offset, true)
+}
+
+func (s *Store) visibleForUser(ctx context.Context, userID, query string, limit, offset int, sentOnly bool) ([]Email, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT`+selectColumns+`
 		FROM emails e
@@ -233,8 +241,9 @@ func (s *Store) SearchForUser(ctx context.Context, userID, query string, limit i
             WHERE lower(mb.local_part || '@' || d.domain)=lower(e.from_addr) AND mb.owner_user_id IS NOT NULL AND mb.owner_user_id<>$1)
         AND strpos(lower(concat_ws(' ', e.from_addr, array_to_string(e.to_addrs, ' '),
 			e.subject, e.text_body, e.html_body)), lower($2)) > 0
-		ORDER BY e.created_at DESC
-		LIMIT $3`, userID, query, limit)
+		AND (NOT $5 OR e.status = 'sent')
+		ORDER BY e.created_at DESC, e.id DESC
+		LIMIT $3 OFFSET $4`, userID, query, limit, offset, sentOnly)
 	if err != nil {
 		return nil, fmt.Errorf("search emails: %w", err)
 	}

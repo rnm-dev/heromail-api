@@ -78,6 +78,54 @@ func TestPrivateMailboxAccess(t *testing.T) {
 			t.Fatalf("search leak: %s", r.Body)
 		}
 	}
+
+	// Sent listing applies the same privacy boundary as detail and search.
+	if _, err = h.pool.Exec(ctx, `UPDATE emails SET status='sent' WHERE id=$1`, sent.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		token string
+		count int
+	}{{owner, 0}, {other, 0}, {employee, 1}} {
+		r = h.do("GET", "/messages/sent", "", tc.token)
+		var result struct {
+			Messages []Email `json:"messages"`
+		}
+		if r.Code != 200 {
+			t.Fatalf("sent list: %d %s", r.Code, r.Body)
+		}
+		if err := json.Unmarshal(r.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Messages) != tc.count {
+			t.Fatalf("sent privacy: %s", r.Body)
+		}
+	}
+	for _, route := range []string{"/messages/sent?offset=-1", "/messages/sent?limit=101", "/messages/sent?limit=0"} {
+		if r = h.do("GET", route, "", employee); r.Code != 400 {
+			t.Fatalf("pagination accepted: %d", r.Code)
+		}
+	}
+	if r = h.do("GET", "/messages/sent", "", h.apiKeyFor(ws)); r.Code != 401 {
+		t.Fatal("API key accessed session sent list")
+	}
+	if r = h.do("GET", "/messages/sent", "", ""); r.Code != 401 {
+		t.Fatal("anonymous accessed sent list")
+	}
+	r = h.do("GET", "/messages/sent?limit=1&offset=1", "", employee)
+	var page struct {
+		Messages []Email `json:"messages"`
+	}
+	if err := json.Unmarshal(r.Body.Bytes(), &page); err != nil || r.Code != 200 || len(page.Messages) != 0 {
+		t.Fatalf("offset: %s", r.Body)
+	}
+	if _, err = h.pool.Exec(ctx, `UPDATE emails SET status='queued' WHERE id=$1`, sent.ID); err != nil {
+		t.Fatal(err)
+	}
+	r = h.do("GET", "/messages/sent", "", employee)
+	if err := json.Unmarshal(r.Body.Bytes(), &page); err != nil || len(page.Messages) != 0 {
+		t.Fatalf("queued included: %s", r.Body)
+	}
 	r = h.do("PUT", path+"/mailboxes/"+box.Id.String()+"/owner", fmt.Sprintf(`{"owner_user_id":%q}`, otherID), employee)
 	if r.Code != 403 {
 		t.Fatal("employee reassigned mailbox")

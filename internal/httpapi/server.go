@@ -530,3 +530,29 @@ func (s *Server) GetEmail(ctx context.Context, request GetEmailRequestObject) (G
 	}
 	return GetEmail200JSONResponse(emailToAPI(msg, attachments)), nil
 }
+
+func (s *Server) ListSentMessages(ctx context.Context, request ListSentMessagesRequestObject) (ListSentMessagesResponseObject, error) {
+	user, ok := account.CurrentUser(ctx)
+	if !ok {
+		return ListSentMessages401JSONResponse{UnauthorizedJSONResponse(errorBody("unauthenticated", "no session"))}, nil
+	}
+	limit, offset := 50, 0
+	if request.Params.Limit != nil {
+		limit = *request.Params.Limit
+	}
+	if request.Params.Offset != nil {
+		offset = *request.Params.Offset
+	}
+	if limit < 1 || limit > 100 || offset < 0 {
+		return ListSentMessages400JSONResponse{BadRequestJSONResponse(errorBody("validation_failed", "invalid pagination"))}, nil
+	}
+	matches, err := s.emails.SentForUser(ctx, user.ID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Email, 0, len(matches))
+	for i := range matches {
+		out = append(out, emailToAPI(&matches[i], nil))
+	}
+	return ListSentMessages200JSONResponse{Messages: out}, nil
+}
