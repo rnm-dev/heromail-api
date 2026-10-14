@@ -935,7 +935,7 @@ paths:
       parameters:
         - name: folder
           in: query
-          schema: { type: string, enum: [INBOX, Junk], default: INBOX }
+          schema: { type: string, enum: [INBOX, Junk, Archive, Trash], default: INBOX }
         - name: limit
           in: query
           required: false
@@ -1060,7 +1060,7 @@ paths:
               type: object
               required: [folder]
               properties:
-                folder: { type: string, enum: [INBOX, Junk] }
+                folder: { type: string, enum: [INBOX, Junk, Archive, Trash] }
       responses:
         '200':
           description: Message in its destination folder

@@ -7,6 +7,7 @@ import (
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
 	"github.com/rnm/heromail/backend/internal/imapservice"
@@ -118,9 +119,37 @@ func TestIMAPPrivateMailboxRoundTrip(t *testing.T) {
 	if stored.ReadAt != nil {
 		t.Fatal("STORE did not clear seen")
 	}
-	if err = c.Create("Archive"); err != nil {
+
+	// System folders exist at mailbox creation; custom folder creation still works.
+	if err = c.Create("Notes"); err != nil {
 		t.Fatal(err)
 	}
+	for _, folder := range []string{"Archive", "Trash"} {
+		path := fmt.Sprintf("/workspaces/%s/messages/%s/folder", h.slugFor(ws), msg.ID)
+		r := h.do("PUT", path, fmt.Sprintf(`{"folder":%q}`, folder), token)
+		if r.Code != 200 {
+			t.Fatalf("web move: %d %s", r.Code, r.Body)
+		}
+		status, err = c.Select(folder, false)
+		if err != nil || status.Messages != 1 {
+			t.Fatalf("web move invisible in IMAP: %+v %v", status, err)
+		}
+		moved, movedBody := fetch(c, true)
+		if !bytes.Equal(movedBody, raw) || moved.Uid == first.Uid {
+			t.Fatal("IMAP move lost body or UID")
+		}
+		if err = c.Move(set, "INBOX"); err != nil {
+			t.Fatal(err)
+		}
+		restored, err := store.MessageByID(ctx, ws, msg.ID)
+		if err != nil || restored.Folder != "INBOX" {
+			t.Fatalf("IMAP restore invisible in web: %+v %v", restored, err)
+		}
+	}
+	if _, err = c.Select("INBOX", false); err != nil {
+		t.Fatal(err)
+	}
+
 	if err = c.Copy(set, "Archive"); err != nil {
 		t.Fatal(err)
 	}

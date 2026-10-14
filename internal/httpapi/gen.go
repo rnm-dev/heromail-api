@@ -215,16 +215,22 @@ func (e UpdateMemberRequestRole) Valid() bool {
 
 // Defines values for ListMessagesParamsFolder.
 const (
-	ListMessagesParamsFolderINBOX ListMessagesParamsFolder = "INBOX"
-	ListMessagesParamsFolderJunk  ListMessagesParamsFolder = "Junk"
+	ListMessagesParamsFolderArchive ListMessagesParamsFolder = "Archive"
+	ListMessagesParamsFolderINBOX   ListMessagesParamsFolder = "INBOX"
+	ListMessagesParamsFolderJunk    ListMessagesParamsFolder = "Junk"
+	ListMessagesParamsFolderTrash   ListMessagesParamsFolder = "Trash"
 )
 
 // Valid indicates whether the value is a known member of the ListMessagesParamsFolder enum.
 func (e ListMessagesParamsFolder) Valid() bool {
 	switch e {
+	case ListMessagesParamsFolderArchive:
+		return true
 	case ListMessagesParamsFolderINBOX:
 		return true
 	case ListMessagesParamsFolderJunk:
+		return true
+	case ListMessagesParamsFolderTrash:
 		return true
 	default:
 		return false
@@ -233,16 +239,22 @@ func (e ListMessagesParamsFolder) Valid() bool {
 
 // Defines values for MoveReceivedMessageJSONBodyFolder.
 const (
-	MoveReceivedMessageJSONBodyFolderINBOX MoveReceivedMessageJSONBodyFolder = "INBOX"
-	MoveReceivedMessageJSONBodyFolderJunk  MoveReceivedMessageJSONBodyFolder = "Junk"
+	MoveReceivedMessageJSONBodyFolderArchive MoveReceivedMessageJSONBodyFolder = "Archive"
+	MoveReceivedMessageJSONBodyFolderINBOX   MoveReceivedMessageJSONBodyFolder = "INBOX"
+	MoveReceivedMessageJSONBodyFolderJunk    MoveReceivedMessageJSONBodyFolder = "Junk"
+	MoveReceivedMessageJSONBodyFolderTrash   MoveReceivedMessageJSONBodyFolder = "Trash"
 )
 
 // Valid indicates whether the value is a known member of the MoveReceivedMessageJSONBodyFolder enum.
 func (e MoveReceivedMessageJSONBodyFolder) Valid() bool {
 	switch e {
+	case MoveReceivedMessageJSONBodyFolderArchive:
+		return true
 	case MoveReceivedMessageJSONBodyFolderINBOX:
 		return true
 	case MoveReceivedMessageJSONBodyFolderJunk:
+		return true
+	case MoveReceivedMessageJSONBodyFolderTrash:
 		return true
 	default:
 		return false
@@ -8103,25 +8115,25 @@ var swaggerSpec = []string{
 	"CBoZRbpXB9t7urXQvXRlsGSqDAxk1cCVrlXB0l+8sEX6y4tSvA4TbSVnWDgKcNzv1khGErZ4+3Dq7x2G",
 	"nO6fwa5pkJqSCNhowbBxADX5MuzsH8z3qeyooCwJdJetPPw3PlP+sWLBTrjf76nGu6QanVHr73Ao2QIb",
 	"k97K9sA7xkgWVAzEbeN+iKBc2KAaDj/5/54mN4fN/r/d+uJW3ZPHKiXbOwDw7p2++evbf/SiHsgic7Mu",
-	"f/4/hbxqCPeHakP+bGM75RXE/Hca4ADLt8citaAZ3uRiClQ3EZoWoNHScOKlz06wuQUmjlMur9rNB2kv",
-	"WCFprPLKl67m7d3N2h8IXL8/LP2tG0ufk8pLzur2aw/YYrp8+PHZsbRq4m0h2anEluaaOY5YaoT9OY2A",
-	"sBVbSZKdGrMtiYXGwucO+j7QujuwwifGeZheM2NPpwe7yR9377IwoC9FEpqjLFK64savZn2Vb3u4z313",
-	"/xpbpkQcZ7XHsb9L+PE4Me1xHxBomB1MZvPW7Y/rqxb8Fl2cvX/XujBwc1FB4nYFEuZebV6dXjUy2OOt",
-	"OjMV/3aqCnYrKy7Adp3pznu+NMmuYbD85Vm77cuz5dVEvbkWFt7KdOGFwpJYqQa+m0QJ3U3eoloDaLAR",
-	"sGG/xFtdUlmgRNqOglugK+rxpxkmzjAVTvl3vGUYWwjhYjleslImMMq7Uqqd7RIyFJvf4A7QM7uU5PiJ",
-	"LqT5BV0gs9dzwz+wP744OmL+UmQmZF7YiL04esoK2WgrBon75XNqE8pKYnW/e4FpG58lfXH0DXYvSEVs",
-	"/3RbAqCDXo5psoxLPgHfA2R3bVi2rhE5SZKzMtq6I/Q2jf+5oie/0+mO6HSteDr85EzODWWa55CpGTTI",
-	"b6OO+P24HpdYCdtTdPT3NqZKPG8ITLtTmdX8xK3E1u8kuxcJ42+z++T/d7o+VXtWteTfmTG0Ehl7lPcW",
-	"rK0S0FWYa+UGg0cTyiqPezfVsmdcX/kDPAeePB56iZhUc7zA6BFWauqrBvZC075tnfAIcHKzXd/hp/qH",
-	"dUz+Ss1lqnhSbutSn72tD1HFFuyBsRp41j7Mzb31Vg7wFcQKL72qL/kaLSyYiI2VjrEQhWb9KA71i2Dt",
-	"8NhNGlo7fM6tBe0G+Pefjw6++fjpafT85g+3iIaHyLksaD/QkKefHQq9YxF67tbohdqeWrA9kjvO32mY",
-	"CZgHg6Gv3/3wU4mD8rczKT3hUvwKes9h2Txd3D6edYK33CEC/doxSLOnnKg7Ooy1yqilVSsdTuCMe6kE",
-	"n6/+YngnFCU+UzNYNgseKqVU79/WSf12p1h6/3Mnj7awmkpMpJDUpR2MFdKTJy1in/zmzvReCSXnSO+9",
-	"afE7rWbCTa3CuH4wO3O1wx/7TLHCrsl0o6/d3xEIh69B8pJZyHKluV5cVrmM6j5EvM01XaxcN9CLPBwe",
-	"V/Qtj6dw8K2SVqt0NaDgNA22EiyvjFXjsmrwAO8lrQsMmh/YnjBu9h6quIUuqo4IvQ66g57yJ8t3zuNF",
-	"qeVh1FmVrlADzkDPwr1BE5j1ol6h095xb2ptbo4PsSF+ArODKWjlvtnXMuu7B1cBS9jYszXA8eEh/nKq",
-	"jD3+16M/H/XcMv3MyqsaHFGkdhoY8Psi47J1T4qS/YbFWwTfeg+SS2v67DxYOhOVdWa+ZqYxYGOrVoe9",
-	"ICj3yrB1wGd1QI/nvvl4818BAAD//w==",
+	"f/4/BV5Pc6LjqZhBL+q919xMG+L+oRqTP9vYYHkFQ/+dBjjAgu6xSC1ohne7mAIVUITGBmi0PZzA6bMT",
+	"bHeBqeSUy6t2O0LaHVZIGqu8BKarnXt3+/YHgtvvD11/61bT56QEk7O6IdsDNp0uH358li2tmrhdSHYq",
+	"scm5Zo5Hllpjf06zIGzXVrJlp+ZtS4ah+fC5w8APtO4O9PCJcT6n19XY5enB7vbH3bssDOhLkYTmKIuU",
+	"Lr3xq1lf99se7nPf5r/GuikxyFntg+zvWn48TkyE3AcWGmYHk9m8dR/k+joGv0UXZ+/fta4Q3FxmkLhd",
+	"gYS5V5uXqVetDfZ4z85Mxb+dOoPdyooLsF1nuvMuME2yaxgsf3nWbgTzbHk1UW+uhYW3Ml14obAkVqqB",
+	"7yZRQreVt6jWABpsBHXYL/FW11YWKJG2o+AWDIu6/mmGqTRMjlNGHu8dxqZCuFiO166UKY3y9pRqZ7uE",
+	"DEXrNzgI9MwuJTl+ogt7fkFXyuz13PAP7I8vjo6YvyaZCZkXNmIvjp6yQjYajUHifvmcGoeykljd715g",
+	"IsfnTV8cfYP9DFIR2z/dlgDooJejnCzjkk/AdwXZXWOWratGTpLkrIy/7gjPTeN/rnjK73S6IzpdK54O",
+	"PzmTc0Ph5jlkagYN8tuoI34/rsclVsL2FB39vY2pEuEbgtfuVGY1P3ErsfU7ye5Fwvj77T75/52uT96e",
+	"VU36d2YMrUTGHuVNBmvrBnQV5lq50+DRhLLK495N/ewZ11f+AM+BJ4+HXiIm1RyvNHqEtZv6qoHG0LRv",
+	"W6dAApzcbOB3+Kn+YR2Tv1JzmSqelNu61Hlv60NUsQV7YKwGnrUPc3O3vZUDfAWxwmuw6mu/RgsLJmJj",
+	"pWMsTaFZP4pD/SJYOzx2k4bWDp9za0G7Af7956ODbz5+eho9v/nDLaLhIXIuS9wPNOTpZwdH71iEnrs1",
+	"eqG2p6Zsj+TW83caZgLmwWDo63c//FQio/x9TUpPuBS/gt5zWDZPF7ePZ53gvXeISb92DNLsMifqHg9j",
+	"rTJqctVKkBNc414qwWewvxjeCUWJz9QMls2Ch0op1ft3jzR/u5ssjfi500lb2FElblJI6uQOxgrpCZYW",
+	"sU8OdKd8rxSTc6333tj4nVYz4aZW4WA/mJ053+GPfaboYddkuhHa7u8IlsPXIHnJLGS50lwvLqvsRnVn",
+	"It74mi5WriToRR4yjyv6lsdTOPhWSatVuhpicLoH2w2W18qqcVlZeIB3l9ZFCM0PbE8YN3sPXtxCO1VH",
+	"hH4I3VNPGZXle+nxMtXyMOo8S1fwAWegZ+H+oQnMelGv0GnvuDe1NjfHh9g0P4HZwRS0ct/sa5n13YOr",
+	"ECZs/tka4PjwEH85VcYe/+vRn496bpl+ZuV1Do4oUjsNDPh9kXHZuktFyX7DBi6Cb70HyaU1fXYeLK+J",
+	"ylo0X1fTGLCxVavDXhDce2XYOgS0OqDHfN98vPmvAAAA//8=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

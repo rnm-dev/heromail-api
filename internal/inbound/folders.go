@@ -22,8 +22,13 @@ func deliveryFolder(raw []byte) string {
 	return "INBOX"
 }
 
+// IsWebFolder limits browser operations to supported system folders.
+func IsWebFolder(folder string) bool {
+	return folder == "INBOX" || folder == "Junk" || folder == "Archive" || folder == "Trash"
+}
+
 func (s *Store) MoveMessage(ctx context.Context, box, id, folder string) (*Message, error) {
-	if folder != "INBOX" && folder != "Junk" {
+	if !IsWebFolder(folder) {
 		return nil, ErrNoMailbox
 	}
 	tx, err := s.pool.Begin(ctx)

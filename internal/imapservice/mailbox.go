@@ -26,8 +26,9 @@ type Mailbox struct {
 func (m *Mailbox) Name() string { return m.name }
 func (m *Mailbox) Info() (*imap.MailboxInfo, error) {
 	info := &imap.MailboxInfo{Name: m.name, Delimiter: ""}
-	if m.name == "Junk" {
-		info.Attributes = []string{`\Junk`}
+	switch m.name {
+	case "Junk", "Archive", "Trash":
+		info.Attributes = []string{`\` + m.name}
 	}
 	return info, nil
 }
@@ -370,7 +371,7 @@ func (m *Mailbox) Expunge() error {
 	return err
 }
 
-// MOVE assigns fresh UIDs at the destination and removes source rows atomically.
+// MOVE preserves message identity and related data while assigning fresh destination UIDs.
 func (m *Mailbox) MoveMessages(uid bool, set *imap.SeqSet, dest string) error {
 	if m.readOnly {
 		return errors.New("mailbox is read-only")
@@ -402,11 +403,8 @@ func (m *Mailbox) MoveMessages(uid bool, set *imap.SeqSet, dest string) error {
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, m.u.box); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO messages(mailbox_id,folder,envelope_from,envelope_to,message_id,from_addr,from_name,subject,sent_at,text_body,html_body,raw,size_bytes,read_at,received_at,imap_flags,smtp_delivery)
- SELECT mailbox_id,$3,envelope_from,envelope_to,message_id,from_addr,from_name,subject,sent_at,text_body,html_body,raw,size_bytes,read_at,received_at,imap_flags,false FROM messages WHERE mailbox_id=$1 AND folder=$2 AND imap_uid=ANY($4::bigint[]) ORDER BY imap_uid`, m.u.box, m.name, dest, ids); err != nil {
-		return err
-	}
-	if _, err = tx.Exec(ctx, `DELETE FROM messages WHERE mailbox_id=$1 AND folder=$2 AND imap_uid=ANY($3::bigint[])`, m.u.box, m.name, ids); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE messages SET folder=$3,imap_uid=nextval('imap_uid_seq')
+ WHERE mailbox_id=$1 AND folder=$2 AND imap_uid=ANY($4::bigint[])`, m.u.box, m.name, dest, ids); err != nil {
 		return err
 	}
 	if err = tx.Commit(ctx); err != nil {

@@ -93,6 +93,62 @@ func TestSpamFolderDeliveryMoveAndPrivacy(t *testing.T) {
 	if len(list("Junk", token)) != 1 {
 		t.Fatal("manual spam move missing")
 	}
+
+	// Archive/Trash share storage, read state and access rules with Inbox/Junk.
+	if _, err = h.pool.Exec(ctx, `UPDATE messages SET read_at=now() WHERE id=$1`, spam.ID); err != nil {
+		t.Fatal(err)
+	}
+	var originalRaw []byte
+	if err = h.pool.QueryRow(ctx, `SELECT raw FROM messages WHERE id=$1`, spam.ID).Scan(&originalRaw); err != nil {
+		t.Fatal(err)
+	}
+	for _, folder := range []string{"Archive", "Trash", "INBOX"} {
+		for _, auth := range []string{other, h.apiKeyFor(ws)} {
+			r = h.do("PUT", path, fmt.Sprintf(`{"folder":%q}`, folder), auth)
+			if r.Code != 401 && r.Code != 404 {
+				t.Fatalf("unauthorized %s move: %d", folder, r.Code)
+			}
+		}
+		r = h.do("PUT", path, fmt.Sprintf(`{"folder":%q}`, folder), token)
+		if r.Code != 200 {
+			t.Fatalf("move %s: %d %s", folder, r.Code, r.Body)
+		}
+		var moved ReceivedMessage
+		if err := json.Unmarshal(r.Body.Bytes(), &moved); err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, m := range list(folder, token) {
+			if m.Id == moved.Id {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("missing from %s", folder)
+		}
+		var raw []byte
+		var read bool
+		if err = h.pool.QueryRow(ctx, `SELECT raw,read_at IS NOT NULL,imap_uid FROM messages WHERE id=$1`, spam.ID).Scan(&raw, &read, &after); err != nil {
+			t.Fatal(err)
+		}
+		if string(raw) != string(originalRaw) || !read || after <= again {
+			t.Fatal("move lost content/read state or reused UID")
+		}
+		r = h.do("PUT", path, fmt.Sprintf(`{"folder":%q}`, folder), token)
+		if r.Code != 200 {
+			t.Fatal(r.Body)
+		}
+		if err = h.pool.QueryRow(ctx, `SELECT imap_uid FROM messages WHERE id=$1`, spam.ID).Scan(&again); err != nil {
+			t.Fatal(err)
+		}
+		if again != after {
+			t.Fatal("same-folder move changed UID")
+		}
+		r = h.do("GET", fmt.Sprintf("/workspaces/%s/mailboxes/%s/messages?folder=%s&q=Spam", slug, box.ID, folder), "", token)
+		if r.Code != 200 {
+			t.Fatalf("folder search: %d %s", r.Code, r.Body)
+		}
+	}
 	// Original SMTP retry cannot duplicate a message even after a folder move.
 	_, err = store.Deliver(ctx, inbound.DeliverParams{MailboxID: box.ID, Raw: []byte("Message-ID: <spam@example.test>\r\n\r\nretry")})
 	if err != inbound.ErrDuplicate {

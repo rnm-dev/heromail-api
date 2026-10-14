@@ -144,7 +144,7 @@ func (s *Server) ListMessages(ctx context.Context, request ListMessagesRequestOb
 	if request.Params.Folder != nil {
 		folder = string(*request.Params.Folder)
 	}
-	if folder != "INBOX" && folder != "Junk" {
+	if !inbound.IsWebFolder(folder) {
 		return ListMessages404JSONResponse{NotFoundJSONResponse(errorBody("not_found", "folder not found"))}, nil
 	}
 	// A blank q is not a search for nothing — it is the unfiltered folder, which
@@ -307,8 +307,8 @@ func (s *Server) MoveReceivedMessage(ctx context.Context, r MoveReceivedMessageR
 	fail := func(code int, msg string) (MoveReceivedMessageResponseObject, error) {
 		return MoveReceivedMessagedefaultJSONResponse{StatusCode: code, Body: errorBody("move_failed", msg)}, nil
 	}
-	if r.Body == nil || (string(r.Body.Folder) != "INBOX" && string(r.Body.Folder) != "Junk") {
-		return fail(400, "folder must be INBOX or Junk")
+	if r.Body == nil || !inbound.IsWebFolder(string(r.Body.Folder)) {
+		return fail(400, "folder must be INBOX, Junk, Archive or Trash")
 	}
 	ws, _, err := s.scope(ctx, string(r.Slug), workspace.RoleMember)
 	if err != nil {
