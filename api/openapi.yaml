@@ -34,6 +34,145 @@ tags:
 security: []
 
 paths:
+  /workspaces/{slug}/mailboxes/{mailboxId}/organization:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { type: string } }
+      - { name: mailboxId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getMailOrganization
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailOrganization' }
+        default:
+          description: Authorization, validation or conflict error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /workspaces/{slug}/mailboxes/{mailboxId}/organization/folders:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { type: string } }
+      - { name: mailboxId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      operationId: saveMailFolder
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                old_name: { type: string }
+                uidvalidity: { type: integer, format: int64 }
+      responses:
+        '204':
+          description: Success
+        default:
+          description: Authorization, validation or conflict error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    delete:
+      operationId: deleteMailFolder
+      security: [{ session: [] }]
+      parameters:
+        - { name: name, in: query, required: true, schema: { type: string } }
+        - { name: uidvalidity, in: query, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '204':
+          description: Success
+        default:
+          description: Authorization, validation or conflict error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /workspaces/{slug}/mailboxes/{mailboxId}/organization/labels/{labelId}:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { type: string } }
+      - { name: mailboxId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: labelId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      operationId: saveMailLabel
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, version]
+              properties:
+                name: { type: string }
+                version: { type: integer }
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailLabel' }
+        default:
+          description: Authorization, validation or conflict error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    delete:
+      operationId: deleteMailLabel
+      security: [{ session: [] }]
+      parameters:
+        - { name: version, in: query, required: true, schema: { type: integer } }
+      responses:
+        '204':
+          description: Success
+        default:
+          description: Authorization, validation or conflict error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /workspaces/{slug}/messages/{messageId}/labels:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { type: string } }
+      - { name: messageId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getMessageLabels
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessageLabels' }
+        default:
+          description: Authorization, validation or conflict error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    patch:
+      operationId: changeMessageLabel
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, applied]
+              properties:
+                id: { type: string, format: uuid }
+                applied: { type: boolean }
+      responses:
+        '204':
+          description: Success
+        default:
+          description: Authorization, validation or conflict error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /contacts:
     get:
       operationId: listContacts
@@ -957,7 +1096,7 @@ paths:
         - { name: unread, in: query, schema: { type: boolean } }
         - { name: starred, in: query, schema: { type: boolean } }
         - { name: box, in: query, schema: { type: string, format: uuid } }
-        - { name: folder, in: query, schema: { type: string, enum: [All, INBOX, Junk, Archive, Trash], default: INBOX } }
+        - { name: folder, in: query, schema: { type: string, default: INBOX } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
         - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
       responses:
@@ -1206,6 +1345,7 @@ paths:
       summary: Received mail with server-side filters, newest first
       security: [{ session: [] }]
       parameters:
+        - { name: label, in: query, schema: { type: string, format: uuid } }
         - name: unread
           in: query
           schema: { type: boolean, default: false }
@@ -1214,7 +1354,7 @@ paths:
           schema: { type: boolean, default: false }
         - name: folder
           in: query
-          schema: { type: string, enum: [INBOX, Junk, Archive, Trash, All], default: INBOX }
+          schema: { type: string, default: INBOX }
         - name: limit
           in: query
           required: false
@@ -1339,8 +1479,8 @@ paths:
               type: object
               required: [folder]
               properties:
-                expected_folder: { type: string, enum: [INBOX, Junk, Archive, Trash] }
-                folder: { type: string, enum: [INBOX, Junk, Archive, Trash] }
+                expected_folder: { type: string }
+                folder: { type: string }
       responses:
         '200':
           description: Message in its destination folder
@@ -1766,6 +1906,33 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    MailFolder:
+      type: object
+      required: [name, uidvalidity, system, total, unread]
+      properties:
+        name: { type: string }
+        uidvalidity: { type: integer, format: int64 }
+        system: { type: boolean }
+        total: { type: integer }
+        unread: { type: integer }
+    MailLabel:
+      type: object
+      required: [id, name, version]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        version: { type: integer }
+    MailOrganization:
+      type: object
+      required: [folders, labels]
+      properties:
+        folders: { type: array, items: { $ref: '#/components/schemas/MailFolder' } }
+        labels: { type: array, items: { $ref: '#/components/schemas/MailLabel' } }
+    MessageLabels:
+      type: object
+      required: [labels]
+      properties:
+        labels: { type: array, items: { $ref: '#/components/schemas/MailLabel' } }
     Contact:
       type: object
       required: [id, name, email, version]

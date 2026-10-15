@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/mail"
 	"strings"
+	"unicode"
 )
 
 // Only Postfix may supply this header: cleanup strips incoming copies before
@@ -23,9 +24,9 @@ func deliveryFolder(raw []byte) string {
 	return "INBOX"
 }
 
-// IsWebFolder limits browser operations to supported system folders.
+// IsWebFolder accepts flat mailbox folder names, excluding the virtual All view.
 func IsWebFolder(folder string) bool {
-	return folder == "INBOX" || folder == "Junk" || folder == "Archive" || folder == "Trash"
+	return folder != "" && folder != "All" && len(folder) <= 200 && folder == strings.TrimSpace(folder) && !strings.Contains(folder, "/") && strings.IndexFunc(folder, unicode.IsControl) < 0
 }
 
 var ErrMoveConflict = errors.New("message folder changed")
@@ -46,8 +47,17 @@ func (s *Store) MoveMessageFrom(ctx context.Context, box, id, folder string, exp
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::text,0))`, box); err != nil {
 		return nil, err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO imap_folders(mailbox_id,name) VALUES($1,$2) ON CONFLICT DO NOTHING`, box, folder); err != nil {
+	if IsSystemFolder(folder) {
+		if _, err = tx.Exec(ctx, `INSERT INTO imap_folders(mailbox_id,name) VALUES($1,$2) ON CONFLICT DO NOTHING`, box, folder); err != nil {
+			return nil, err
+		}
+	}
+	var exists bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM imap_folders WHERE mailbox_id=$1 AND name=$2)`, box, folder).Scan(&exists); err != nil {
 		return nil, err
+	}
+	if !exists {
+		return nil, ErrNoMailbox
 	}
 	m, err := scanMessage(tx.QueryRow(ctx, `UPDATE messages SET imap_uid=CASE WHEN folder<>$3 THEN nextval('imap_uid_seq') ELSE imap_uid END,folder=$3 WHERE mailbox_id=$1 AND id=$2 AND ($4::text IS NULL OR folder=$4) RETURNING `+strings.ReplaceAll(messageColumns, "msg.", ""), box, id, folder, expected))
 	if err != nil {
@@ -60,4 +70,8 @@ func (s *Store) MoveMessageFrom(ctx context.Context, box, id, folder string, exp
 		return nil, err
 	}
 	return m, nil
+}
+
+func IsSystemFolder(folder string) bool {
+	return folder == "INBOX" || folder == "Junk" || folder == "Archive" || folder == "Trash"
 }

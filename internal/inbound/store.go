@@ -186,15 +186,20 @@ func (s *Store) SearchFolderMessages(ctx context.Context, mailboxID, folder, que
 	return s.FilterMessages(ctx, mailboxID, folder, query, limit, skip, false, false)
 }
 
-func (s *Store) FilterMessages(ctx context.Context, mailboxID, folder, query string, limit, skip int, unread, starred bool) ([]Message, error) {
+func (s *Store) FilterMessages(ctx context.Context, mailboxID, folder, query string, limit, skip int, unread, starred bool, labels ...string) ([]Message, error) {
+	label := ""
+	if len(labels) > 0 {
+		label = labels[0]
+	}
 	rows, err := s.pool.Query(ctx, `
  SELECT`+messageColumns+`
  FROM messages msg
  WHERE msg.mailbox_id=$1 AND ($4='All' OR msg.folder=$4)
+ AND ($8='' OR EXISTS(SELECT 1 FROM message_labels ml WHERE ml.message_id=msg.id AND ml.label_id=nullif($8,'')::uuid))
  AND (NOT $6 OR msg.read_at IS NULL) AND (NOT $7 OR '\Flagged'=ANY(msg.imap_flags))
    AND strpos(lower(concat_ws(' ', msg.subject, msg.from_addr, msg.from_name, msg.text_body)), lower($5)) > 0
  ORDER BY msg.received_at DESC, msg.id DESC LIMIT $2 OFFSET $3`,
-		mailboxID, limit, skip, folder, query, unread, starred)
+		mailboxID, limit, skip, folder, query, unread, starred, label)
 	if err != nil {
 		return nil, err
 	}

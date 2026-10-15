@@ -110,7 +110,7 @@ func TestReceivedSearchGlobalPagesAndMIME(t *testing.T) {
 			t.Fatal("search auth bypass")
 		}
 	}
-	for _, query := range []string{"limit=0", "limit=101", "offset=-1", "before=nonsense", "after=2026-10-15&before=2026-10-14", "folder=bad"} {
+	for _, query := range []string{"limit=0", "limit=101", "offset=-1", "before=nonsense", "after=2026-10-15&before=2026-10-14", "folder=bad%2Fname"} {
 		if r := h.do("GET", "/messages/received-search?"+query, "", token); r.Code != 400 {
 			t.Fatalf("invalid search accepted %s %d", query, r.Code)
 		}

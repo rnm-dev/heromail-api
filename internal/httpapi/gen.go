@@ -213,108 +213,6 @@ func (e UpdateMemberRequestRole) Valid() bool {
 	}
 }
 
-// Defines values for SearchReceivedMessagesParamsFolder.
-const (
-	SearchReceivedMessagesParamsFolderAll     SearchReceivedMessagesParamsFolder = "All"
-	SearchReceivedMessagesParamsFolderArchive SearchReceivedMessagesParamsFolder = "Archive"
-	SearchReceivedMessagesParamsFolderINBOX   SearchReceivedMessagesParamsFolder = "INBOX"
-	SearchReceivedMessagesParamsFolderJunk    SearchReceivedMessagesParamsFolder = "Junk"
-	SearchReceivedMessagesParamsFolderTrash   SearchReceivedMessagesParamsFolder = "Trash"
-)
-
-// Valid indicates whether the value is a known member of the SearchReceivedMessagesParamsFolder enum.
-func (e SearchReceivedMessagesParamsFolder) Valid() bool {
-	switch e {
-	case SearchReceivedMessagesParamsFolderAll:
-		return true
-	case SearchReceivedMessagesParamsFolderArchive:
-		return true
-	case SearchReceivedMessagesParamsFolderINBOX:
-		return true
-	case SearchReceivedMessagesParamsFolderJunk:
-		return true
-	case SearchReceivedMessagesParamsFolderTrash:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for ListMessagesParamsFolder.
-const (
-	ListMessagesParamsFolderAll     ListMessagesParamsFolder = "All"
-	ListMessagesParamsFolderArchive ListMessagesParamsFolder = "Archive"
-	ListMessagesParamsFolderINBOX   ListMessagesParamsFolder = "INBOX"
-	ListMessagesParamsFolderJunk    ListMessagesParamsFolder = "Junk"
-	ListMessagesParamsFolderTrash   ListMessagesParamsFolder = "Trash"
-)
-
-// Valid indicates whether the value is a known member of the ListMessagesParamsFolder enum.
-func (e ListMessagesParamsFolder) Valid() bool {
-	switch e {
-	case ListMessagesParamsFolderAll:
-		return true
-	case ListMessagesParamsFolderArchive:
-		return true
-	case ListMessagesParamsFolderINBOX:
-		return true
-	case ListMessagesParamsFolderJunk:
-		return true
-	case ListMessagesParamsFolderTrash:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for MoveReceivedMessageJSONBodyExpectedFolder.
-const (
-	MoveReceivedMessageJSONBodyExpectedFolderArchive MoveReceivedMessageJSONBodyExpectedFolder = "Archive"
-	MoveReceivedMessageJSONBodyExpectedFolderINBOX   MoveReceivedMessageJSONBodyExpectedFolder = "INBOX"
-	MoveReceivedMessageJSONBodyExpectedFolderJunk    MoveReceivedMessageJSONBodyExpectedFolder = "Junk"
-	MoveReceivedMessageJSONBodyExpectedFolderTrash   MoveReceivedMessageJSONBodyExpectedFolder = "Trash"
-)
-
-// Valid indicates whether the value is a known member of the MoveReceivedMessageJSONBodyExpectedFolder enum.
-func (e MoveReceivedMessageJSONBodyExpectedFolder) Valid() bool {
-	switch e {
-	case MoveReceivedMessageJSONBodyExpectedFolderArchive:
-		return true
-	case MoveReceivedMessageJSONBodyExpectedFolderINBOX:
-		return true
-	case MoveReceivedMessageJSONBodyExpectedFolderJunk:
-		return true
-	case MoveReceivedMessageJSONBodyExpectedFolderTrash:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for MoveReceivedMessageJSONBodyFolder.
-const (
-	MoveReceivedMessageJSONBodyFolderArchive MoveReceivedMessageJSONBodyFolder = "Archive"
-	MoveReceivedMessageJSONBodyFolderINBOX   MoveReceivedMessageJSONBodyFolder = "INBOX"
-	MoveReceivedMessageJSONBodyFolderJunk    MoveReceivedMessageJSONBodyFolder = "Junk"
-	MoveReceivedMessageJSONBodyFolderTrash   MoveReceivedMessageJSONBodyFolder = "Trash"
-)
-
-// Valid indicates whether the value is a known member of the MoveReceivedMessageJSONBodyFolder enum.
-func (e MoveReceivedMessageJSONBodyFolder) Valid() bool {
-	switch e {
-	case MoveReceivedMessageJSONBodyFolderArchive:
-		return true
-	case MoveReceivedMessageJSONBodyFolderINBOX:
-		return true
-	case MoveReceivedMessageJSONBodyFolderJunk:
-		return true
-	case MoveReceivedMessageJSONBodyFolderTrash:
-		return true
-	default:
-		return false
-	}
-}
-
 // AddDomainRequest defines model for AddDomainRequest.
 type AddDomainRequest struct {
 	// Domain Lowercase FQDN. Stored normalised, so `ACME.com` and `acme.com` are one domain.
@@ -591,6 +489,28 @@ type MailDraft struct {
 	Workspace string                 `json:"workspace"`
 }
 
+// MailFolder defines model for MailFolder.
+type MailFolder struct {
+	Name        string `json:"name"`
+	System      bool   `json:"system"`
+	Total       int    `json:"total"`
+	Uidvalidity int64  `json:"uidvalidity"`
+	Unread      int    `json:"unread"`
+}
+
+// MailLabel defines model for MailLabel.
+type MailLabel struct {
+	Id      openapi_types.UUID `json:"id"`
+	Name    string             `json:"name"`
+	Version int                `json:"version"`
+}
+
+// MailOrganization defines model for MailOrganization.
+type MailOrganization struct {
+	Folders []MailFolder `json:"folders"`
+	Labels  []MailLabel  `json:"labels"`
+}
+
 // MailSignature defines model for MailSignature.
 type MailSignature struct {
 	Sender  openapi_types.Email `json:"sender"`
@@ -623,6 +543,11 @@ type Member struct {
 // MemberList defines model for MemberList.
 type MemberList struct {
 	Members []Member `json:"members"`
+}
+
+// MessageLabels defines model for MessageLabels.
+type MessageLabels struct {
+	Labels []MailLabel `json:"labels"`
 }
 
 // ProvisionWorkspaceUserRequest defines model for ProvisionWorkspaceUserRequest.
@@ -894,18 +819,15 @@ type SearchReceivedMessagesParams struct {
 	After *string `form:"after,omitempty" json:"after,omitempty"`
 
 	// Before Last received date inclusive in UTC (YYYY-MM-DD)
-	Before      *string                             `form:"before,omitempty" json:"before,omitempty"`
-	Attachments *bool                               `form:"attachments,omitempty" json:"attachments,omitempty"`
-	Unread      *bool                               `form:"unread,omitempty" json:"unread,omitempty"`
-	Starred     *bool                               `form:"starred,omitempty" json:"starred,omitempty"`
-	Box         *openapi_types.UUID                 `form:"box,omitempty" json:"box,omitempty"`
-	Folder      *SearchReceivedMessagesParamsFolder `form:"folder,omitempty" json:"folder,omitempty"`
-	Limit       *int                                `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset      *int                                `form:"offset,omitempty" json:"offset,omitempty"`
+	Before      *string             `form:"before,omitempty" json:"before,omitempty"`
+	Attachments *bool               `form:"attachments,omitempty" json:"attachments,omitempty"`
+	Unread      *bool               `form:"unread,omitempty" json:"unread,omitempty"`
+	Starred     *bool               `form:"starred,omitempty" json:"starred,omitempty"`
+	Box         *openapi_types.UUID `form:"box,omitempty" json:"box,omitempty"`
+	Folder      *string             `form:"folder,omitempty" json:"folder,omitempty"`
+	Limit       *int                `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset      *int                `form:"offset,omitempty" json:"offset,omitempty"`
 }
-
-// SearchReceivedMessagesParamsFolder defines parameters for SearchReceivedMessages.
-type SearchReceivedMessagesParamsFolder string
 
 // SearchMessagesParams defines parameters for SearchMessages.
 type SearchMessagesParams struct {
@@ -975,10 +897,11 @@ type SendWorkspaceEmailParams struct {
 
 // ListMessagesParams defines parameters for ListMessages.
 type ListMessagesParams struct {
-	Unread  *bool                     `form:"unread,omitempty" json:"unread,omitempty"`
-	Starred *bool                     `form:"starred,omitempty" json:"starred,omitempty"`
-	Folder  *ListMessagesParamsFolder `form:"folder,omitempty" json:"folder,omitempty"`
-	Limit   *int                      `form:"limit,omitempty" json:"limit,omitempty"`
+	Label   *openapi_types.UUID `form:"label,omitempty" json:"label,omitempty"`
+	Unread  *bool               `form:"unread,omitempty" json:"unread,omitempty"`
+	Starred *bool               `form:"starred,omitempty" json:"starred,omitempty"`
+	Folder  *string             `form:"folder,omitempty" json:"folder,omitempty"`
+	Limit   *int                `form:"limit,omitempty" json:"limit,omitempty"`
 
 	// Q Free-text filter over subject, sender and body. Absent or blank
 	// returns the folder unfiltered.
@@ -986,8 +909,29 @@ type ListMessagesParams struct {
 	Offset *int    `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
-// ListMessagesParamsFolder defines parameters for ListMessages.
-type ListMessagesParamsFolder string
+// DeleteMailFolderParams defines parameters for DeleteMailFolder.
+type DeleteMailFolderParams struct {
+	Name        string `form:"name" json:"name"`
+	Uidvalidity int64  `form:"uidvalidity" json:"uidvalidity"`
+}
+
+// SaveMailFolderJSONBody defines parameters for SaveMailFolder.
+type SaveMailFolderJSONBody struct {
+	Name        string  `json:"name"`
+	OldName     *string `json:"old_name,omitempty"`
+	Uidvalidity *int64  `json:"uidvalidity,omitempty"`
+}
+
+// DeleteMailLabelParams defines parameters for DeleteMailLabel.
+type DeleteMailLabelParams struct {
+	Version int `form:"version" json:"version"`
+}
+
+// SaveMailLabelJSONBody defines parameters for SaveMailLabel.
+type SaveMailLabelJSONBody struct {
+	Name    string `json:"name"`
+	Version int    `json:"version"`
+}
 
 // AssignMailboxOwnerJSONBody defines parameters for AssignMailboxOwner.
 type AssignMailboxOwnerJSONBody struct {
@@ -1007,15 +951,15 @@ type UpdateMessageFlagsJSONBody struct {
 
 // MoveReceivedMessageJSONBody defines parameters for MoveReceivedMessage.
 type MoveReceivedMessageJSONBody struct {
-	ExpectedFolder *MoveReceivedMessageJSONBodyExpectedFolder `json:"expected_folder,omitempty"`
-	Folder         MoveReceivedMessageJSONBodyFolder          `json:"folder"`
+	ExpectedFolder *string `json:"expected_folder,omitempty"`
+	Folder         string  `json:"folder"`
 }
 
-// MoveReceivedMessageJSONBodyExpectedFolder defines parameters for MoveReceivedMessage.
-type MoveReceivedMessageJSONBodyExpectedFolder string
-
-// MoveReceivedMessageJSONBodyFolder defines parameters for MoveReceivedMessage.
-type MoveReceivedMessageJSONBodyFolder string
+// ChangeMessageLabelJSONBody defines parameters for ChangeMessageLabel.
+type ChangeMessageLabelJSONBody struct {
+	Applied bool               `json:"applied"`
+	Id      openapi_types.UUID `json:"id"`
+}
 
 // ChangeInitialPasswordJSONRequestBody defines body for ChangeInitialPassword for application/json ContentType.
 type ChangeInitialPasswordJSONRequestBody ChangeInitialPasswordJSONBody
@@ -1086,6 +1030,12 @@ type SaveMailSignatureJSONRequestBody = MailSignature
 // CreateMailboxJSONRequestBody defines body for CreateMailbox for application/json ContentType.
 type CreateMailboxJSONRequestBody = CreateMailboxRequest
 
+// SaveMailFolderJSONRequestBody defines body for SaveMailFolder for application/json ContentType.
+type SaveMailFolderJSONRequestBody SaveMailFolderJSONBody
+
+// SaveMailLabelJSONRequestBody defines body for SaveMailLabel for application/json ContentType.
+type SaveMailLabelJSONRequestBody SaveMailLabelJSONBody
+
 // AssignMailboxOwnerJSONRequestBody defines body for AssignMailboxOwner for application/json ContentType.
 type AssignMailboxOwnerJSONRequestBody AssignMailboxOwnerJSONBody
 
@@ -1106,6 +1056,9 @@ type UpdateMessageFlagsJSONRequestBody UpdateMessageFlagsJSONBody
 
 // MoveReceivedMessageJSONRequestBody defines body for MoveReceivedMessage for application/json ContentType.
 type MoveReceivedMessageJSONRequestBody MoveReceivedMessageJSONBody
+
+// ChangeMessageLabelJSONRequestBody defines body for ChangeMessageLabel for application/json ContentType.
+type ChangeMessageLabelJSONRequestBody ChangeMessageLabelJSONBody
 
 // ProvisionWorkspaceUserJSONRequestBody defines body for ProvisionWorkspaceUser for application/json ContentType.
 type ProvisionWorkspaceUserJSONRequestBody = ProvisionWorkspaceUserRequest
@@ -1281,6 +1234,21 @@ type ServerInterface interface {
 	// (GET /workspaces/{slug}/mailboxes/{mailboxId}/messages)
 	ListMessages(w http.ResponseWriter, r *http.Request, slug Slug, mailboxId openapi_types.UUID, params ListMessagesParams)
 
+	// (GET /workspaces/{slug}/mailboxes/{mailboxId}/organization)
+	GetMailOrganization(w http.ResponseWriter, r *http.Request, slug string, mailboxId openapi_types.UUID)
+
+	// (DELETE /workspaces/{slug}/mailboxes/{mailboxId}/organization/folders)
+	DeleteMailFolder(w http.ResponseWriter, r *http.Request, slug string, mailboxId openapi_types.UUID, params DeleteMailFolderParams)
+
+	// (PUT /workspaces/{slug}/mailboxes/{mailboxId}/organization/folders)
+	SaveMailFolder(w http.ResponseWriter, r *http.Request, slug string, mailboxId openapi_types.UUID)
+
+	// (DELETE /workspaces/{slug}/mailboxes/{mailboxId}/organization/labels/{labelId})
+	DeleteMailLabel(w http.ResponseWriter, r *http.Request, slug string, mailboxId openapi_types.UUID, labelId openapi_types.UUID, params DeleteMailLabelParams)
+
+	// (PUT /workspaces/{slug}/mailboxes/{mailboxId}/organization/labels/{labelId})
+	SaveMailLabel(w http.ResponseWriter, r *http.Request, slug string, mailboxId openapi_types.UUID, labelId openapi_types.UUID)
+
 	// (PUT /workspaces/{slug}/mailboxes/{mailboxId}/owner)
 	AssignMailboxOwner(w http.ResponseWriter, r *http.Request, slug Slug, mailboxId openapi_types.UUID)
 
@@ -1319,6 +1287,12 @@ type ServerInterface interface {
 
 	// (PUT /workspaces/{slug}/messages/{messageId}/folder)
 	MoveReceivedMessage(w http.ResponseWriter, r *http.Request, slug Slug, messageId openapi_types.UUID)
+
+	// (GET /workspaces/{slug}/messages/{messageId}/labels)
+	GetMessageLabels(w http.ResponseWriter, r *http.Request, slug string, messageId openapi_types.UUID)
+
+	// (PATCH /workspaces/{slug}/messages/{messageId}/labels)
+	ChangeMessageLabel(w http.ResponseWriter, r *http.Request, slug string, messageId openapi_types.UUID)
 
 	// (GET /workspaces/{slug}/messages/{messageId}/raw)
 	DownloadReceivedRaw(w http.ResponseWriter, r *http.Request, slug Slug, messageId openapi_types.UUID)
@@ -3076,6 +3050,19 @@ func (siw *ServerInterfaceWrapper) ListMessages(w http.ResponseWriter, r *http.R
 	// Parameter object where we will unmarshal all parameters from the context
 	var params ListMessagesParams
 
+	// ------------- Optional query parameter "label" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "label", r.URL.Query(), &params.Label, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "label"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "label", Err: err})
+		}
+		return
+	}
+
 	// ------------- Optional query parameter "unread" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "unread", r.URL.Query(), &params.Unread, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
@@ -3156,6 +3143,244 @@ func (siw *ServerInterfaceWrapper) ListMessages(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListMessages(w, r, slug, mailboxId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMailOrganization operation middleware
+func (siw *ServerInterfaceWrapper) GetMailOrganization(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "slug" -------------
+	var slug string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "slug", r.PathValue("slug"), &slug, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "slug", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "mailboxId" -------------
+	var mailboxId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "mailboxId", r.PathValue("mailboxId"), &mailboxId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "mailboxId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMailOrganization(w, r, slug, mailboxId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteMailFolder operation middleware
+func (siw *ServerInterfaceWrapper) DeleteMailFolder(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "slug" -------------
+	var slug string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "slug", r.PathValue("slug"), &slug, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "slug", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "mailboxId" -------------
+	var mailboxId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "mailboxId", r.PathValue("mailboxId"), &mailboxId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "mailboxId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteMailFolderParams
+
+	// ------------- Required query parameter "name" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "name", r.URL.Query(), &params.Name, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "name"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "uidvalidity" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "uidvalidity", r.URL.Query(), &params.Uidvalidity, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "uidvalidity"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "uidvalidity", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteMailFolder(w, r, slug, mailboxId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SaveMailFolder operation middleware
+func (siw *ServerInterfaceWrapper) SaveMailFolder(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "slug" -------------
+	var slug string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "slug", r.PathValue("slug"), &slug, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "slug", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "mailboxId" -------------
+	var mailboxId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "mailboxId", r.PathValue("mailboxId"), &mailboxId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "mailboxId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SaveMailFolder(w, r, slug, mailboxId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteMailLabel operation middleware
+func (siw *ServerInterfaceWrapper) DeleteMailLabel(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "slug" -------------
+	var slug string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "slug", r.PathValue("slug"), &slug, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "slug", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "mailboxId" -------------
+	var mailboxId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "mailboxId", r.PathValue("mailboxId"), &mailboxId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "mailboxId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "labelId" -------------
+	var labelId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "labelId", r.PathValue("labelId"), &labelId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "labelId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteMailLabelParams
+
+	// ------------- Required query parameter "version" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "version", r.URL.Query(), &params.Version, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "version"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "version", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteMailLabel(w, r, slug, mailboxId, labelId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SaveMailLabel operation middleware
+func (siw *ServerInterfaceWrapper) SaveMailLabel(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "slug" -------------
+	var slug string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "slug", r.PathValue("slug"), &slug, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "slug", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "mailboxId" -------------
+	var mailboxId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "mailboxId", r.PathValue("mailboxId"), &mailboxId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "mailboxId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "labelId" -------------
+	var labelId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "labelId", r.PathValue("labelId"), &labelId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "labelId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SaveMailLabel(w, r, slug, mailboxId, labelId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3611,6 +3836,76 @@ func (siw *ServerInterfaceWrapper) MoveReceivedMessage(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// GetMessageLabels operation middleware
+func (siw *ServerInterfaceWrapper) GetMessageLabels(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "slug" -------------
+	var slug string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "slug", r.PathValue("slug"), &slug, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "slug", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "messageId" -------------
+	var messageId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "messageId", r.PathValue("messageId"), &messageId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "messageId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMessageLabels(w, r, slug, messageId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ChangeMessageLabel operation middleware
+func (siw *ServerInterfaceWrapper) ChangeMessageLabel(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "slug" -------------
+	var slug string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "slug", r.PathValue("slug"), &slug, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "slug", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "messageId" -------------
+	var messageId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "messageId", r.PathValue("messageId"), &messageId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "messageId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ChangeMessageLabel(w, r, slug, messageId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DownloadReceivedRaw operation middleware
 func (siw *ServerInterfaceWrapper) DownloadReceivedRaw(w http.ResponseWriter, r *http.Request) {
 
@@ -3792,6 +4087,13 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/workspaces/{slug}/mailboxes/{mailboxId}/organization", wrapper.GetMailOrganization)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/workspaces/{slug}/mailboxes/{mailboxId}/organization/folders", wrapper.DeleteMailFolder)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/workspaces/{slug}/mailboxes/{mailboxId}/organization/folders", wrapper.SaveMailFolder)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/workspaces/{slug}/mailboxes/{mailboxId}/organization/labels/{labelId}", wrapper.DeleteMailLabel)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/workspaces/{slug}/mailboxes/{mailboxId}/organization/labels/{labelId}", wrapper.SaveMailLabel)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/workspaces/{slug}/messages/{messageId}/labels", wrapper.GetMessageLabels)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/workspaces/{slug}/messages/{messageId}/labels", wrapper.ChangeMessageLabel)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/contacts", wrapper.ListContacts)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/contacts/{id}", wrapper.DeleteContact)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/contacts/{id}", wrapper.SaveContact)
@@ -7030,6 +7332,194 @@ func (response ListMessages404JSONResponse) VisitListMessagesResponse(w http.Res
 	return err
 }
 
+type GetMailOrganizationRequestObject struct {
+	Slug      string             `json:"slug"`
+	MailboxId openapi_types.UUID `json:"mailboxId"`
+}
+
+type GetMailOrganizationResponseObject interface {
+	VisitGetMailOrganizationResponse(w http.ResponseWriter) error
+}
+
+type GetMailOrganization200JSONResponse MailOrganization
+
+func (response GetMailOrganization200JSONResponse) VisitGetMailOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMailOrganizationdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetMailOrganizationdefaultJSONResponse) VisitGetMailOrganizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMailFolderRequestObject struct {
+	Slug      string             `json:"slug"`
+	MailboxId openapi_types.UUID `json:"mailboxId"`
+	Params    DeleteMailFolderParams
+}
+
+type DeleteMailFolderResponseObject interface {
+	VisitDeleteMailFolderResponse(w http.ResponseWriter) error
+}
+
+type DeleteMailFolder204Response struct {
+}
+
+func (response DeleteMailFolder204Response) VisitDeleteMailFolderResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteMailFolderdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DeleteMailFolderdefaultJSONResponse) VisitDeleteMailFolderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveMailFolderRequestObject struct {
+	Slug      string             `json:"slug"`
+	MailboxId openapi_types.UUID `json:"mailboxId"`
+	Body      *SaveMailFolderJSONRequestBody
+}
+
+type SaveMailFolderResponseObject interface {
+	VisitSaveMailFolderResponse(w http.ResponseWriter) error
+}
+
+type SaveMailFolder204Response struct {
+}
+
+func (response SaveMailFolder204Response) VisitSaveMailFolderResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type SaveMailFolderdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SaveMailFolderdefaultJSONResponse) VisitSaveMailFolderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMailLabelRequestObject struct {
+	Slug      string             `json:"slug"`
+	MailboxId openapi_types.UUID `json:"mailboxId"`
+	LabelId   openapi_types.UUID `json:"labelId"`
+	Params    DeleteMailLabelParams
+}
+
+type DeleteMailLabelResponseObject interface {
+	VisitDeleteMailLabelResponse(w http.ResponseWriter) error
+}
+
+type DeleteMailLabel204Response struct {
+}
+
+func (response DeleteMailLabel204Response) VisitDeleteMailLabelResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteMailLabeldefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DeleteMailLabeldefaultJSONResponse) VisitDeleteMailLabelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveMailLabelRequestObject struct {
+	Slug      string             `json:"slug"`
+	MailboxId openapi_types.UUID `json:"mailboxId"`
+	LabelId   openapi_types.UUID `json:"labelId"`
+	Body      *SaveMailLabelJSONRequestBody
+}
+
+type SaveMailLabelResponseObject interface {
+	VisitSaveMailLabelResponse(w http.ResponseWriter) error
+}
+
+type SaveMailLabel200JSONResponse MailLabel
+
+func (response SaveMailLabel200JSONResponse) VisitSaveMailLabelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveMailLabeldefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SaveMailLabeldefaultJSONResponse) VisitSaveMailLabelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type AssignMailboxOwnerRequestObject struct {
 	Slug      Slug               `json:"slug"`
 	MailboxId openapi_types.UUID `json:"mailboxId"`
@@ -7571,6 +8061,81 @@ func (response MoveReceivedMessagedefaultJSONResponse) VisitMoveReceivedMessageR
 	return err
 }
 
+type GetMessageLabelsRequestObject struct {
+	Slug      string             `json:"slug"`
+	MessageId openapi_types.UUID `json:"messageId"`
+}
+
+type GetMessageLabelsResponseObject interface {
+	VisitGetMessageLabelsResponse(w http.ResponseWriter) error
+}
+
+type GetMessageLabels200JSONResponse MessageLabels
+
+func (response GetMessageLabels200JSONResponse) VisitGetMessageLabelsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMessageLabelsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetMessageLabelsdefaultJSONResponse) VisitGetMessageLabelsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ChangeMessageLabelRequestObject struct {
+	Slug      string             `json:"slug"`
+	MessageId openapi_types.UUID `json:"messageId"`
+	Body      *ChangeMessageLabelJSONRequestBody
+}
+
+type ChangeMessageLabelResponseObject interface {
+	VisitChangeMessageLabelResponse(w http.ResponseWriter) error
+}
+
+type ChangeMessageLabel204Response struct {
+}
+
+func (response ChangeMessageLabel204Response) VisitChangeMessageLabelResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type ChangeMessageLabeldefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ChangeMessageLabeldefaultJSONResponse) VisitChangeMessageLabelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DownloadReceivedRawRequestObject struct {
 	Slug      Slug               `json:"slug"`
 	MessageId openapi_types.UUID `json:"messageId"`
@@ -7847,6 +8412,21 @@ type StrictServerInterface interface {
 	// (GET /workspaces/{slug}/mailboxes/{mailboxId}/messages)
 	ListMessages(ctx context.Context, request ListMessagesRequestObject) (ListMessagesResponseObject, error)
 
+	// (GET /workspaces/{slug}/mailboxes/{mailboxId}/organization)
+	GetMailOrganization(ctx context.Context, request GetMailOrganizationRequestObject) (GetMailOrganizationResponseObject, error)
+
+	// (DELETE /workspaces/{slug}/mailboxes/{mailboxId}/organization/folders)
+	DeleteMailFolder(ctx context.Context, request DeleteMailFolderRequestObject) (DeleteMailFolderResponseObject, error)
+
+	// (PUT /workspaces/{slug}/mailboxes/{mailboxId}/organization/folders)
+	SaveMailFolder(ctx context.Context, request SaveMailFolderRequestObject) (SaveMailFolderResponseObject, error)
+
+	// (DELETE /workspaces/{slug}/mailboxes/{mailboxId}/organization/labels/{labelId})
+	DeleteMailLabel(ctx context.Context, request DeleteMailLabelRequestObject) (DeleteMailLabelResponseObject, error)
+
+	// (PUT /workspaces/{slug}/mailboxes/{mailboxId}/organization/labels/{labelId})
+	SaveMailLabel(ctx context.Context, request SaveMailLabelRequestObject) (SaveMailLabelResponseObject, error)
+
 	// (PUT /workspaces/{slug}/mailboxes/{mailboxId}/owner)
 	AssignMailboxOwner(ctx context.Context, request AssignMailboxOwnerRequestObject) (AssignMailboxOwnerResponseObject, error)
 
@@ -7885,6 +8465,12 @@ type StrictServerInterface interface {
 
 	// (PUT /workspaces/{slug}/messages/{messageId}/folder)
 	MoveReceivedMessage(ctx context.Context, request MoveReceivedMessageRequestObject) (MoveReceivedMessageResponseObject, error)
+
+	// (GET /workspaces/{slug}/messages/{messageId}/labels)
+	GetMessageLabels(ctx context.Context, request GetMessageLabelsRequestObject) (GetMessageLabelsResponseObject, error)
+
+	// (PATCH /workspaces/{slug}/messages/{messageId}/labels)
+	ChangeMessageLabel(ctx context.Context, request ChangeMessageLabelRequestObject) (ChangeMessageLabelResponseObject, error)
 
 	// (GET /workspaces/{slug}/messages/{messageId}/raw)
 	DownloadReceivedRaw(ctx context.Context, request DownloadReceivedRawRequestObject) (DownloadReceivedRawResponseObject, error)
@@ -9539,6 +10125,159 @@ func (sh *strictHandler) ListMessages(w http.ResponseWriter, r *http.Request, sl
 	}
 }
 
+// GetMailOrganization operation middleware
+func (sh *strictHandler) GetMailOrganization(w http.ResponseWriter, r *http.Request, slug string, mailboxId openapi_types.UUID) {
+	var request GetMailOrganizationRequestObject
+
+	request.Slug = slug
+	request.MailboxId = mailboxId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMailOrganization(ctx, request.(GetMailOrganizationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMailOrganization")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMailOrganizationResponseObject); ok {
+		if err := validResponse.VisitGetMailOrganizationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteMailFolder operation middleware
+func (sh *strictHandler) DeleteMailFolder(w http.ResponseWriter, r *http.Request, slug string, mailboxId openapi_types.UUID, params DeleteMailFolderParams) {
+	var request DeleteMailFolderRequestObject
+
+	request.Slug = slug
+	request.MailboxId = mailboxId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteMailFolder(ctx, request.(DeleteMailFolderRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteMailFolder")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteMailFolderResponseObject); ok {
+		if err := validResponse.VisitDeleteMailFolderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SaveMailFolder operation middleware
+func (sh *strictHandler) SaveMailFolder(w http.ResponseWriter, r *http.Request, slug string, mailboxId openapi_types.UUID) {
+	var request SaveMailFolderRequestObject
+
+	request.Slug = slug
+	request.MailboxId = mailboxId
+
+	var body SaveMailFolderJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SaveMailFolder(ctx, request.(SaveMailFolderRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SaveMailFolder")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SaveMailFolderResponseObject); ok {
+		if err := validResponse.VisitSaveMailFolderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteMailLabel operation middleware
+func (sh *strictHandler) DeleteMailLabel(w http.ResponseWriter, r *http.Request, slug string, mailboxId openapi_types.UUID, labelId openapi_types.UUID, params DeleteMailLabelParams) {
+	var request DeleteMailLabelRequestObject
+
+	request.Slug = slug
+	request.MailboxId = mailboxId
+	request.LabelId = labelId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteMailLabel(ctx, request.(DeleteMailLabelRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteMailLabel")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteMailLabelResponseObject); ok {
+		if err := validResponse.VisitDeleteMailLabelResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SaveMailLabel operation middleware
+func (sh *strictHandler) SaveMailLabel(w http.ResponseWriter, r *http.Request, slug string, mailboxId openapi_types.UUID, labelId openapi_types.UUID) {
+	var request SaveMailLabelRequestObject
+
+	request.Slug = slug
+	request.MailboxId = mailboxId
+	request.LabelId = labelId
+
+	var body SaveMailLabelJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SaveMailLabel(ctx, request.(SaveMailLabelRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SaveMailLabel")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SaveMailLabelResponseObject); ok {
+		if err := validResponse.VisitSaveMailLabelResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // AssignMailboxOwner operation middleware
 func (sh *strictHandler) AssignMailboxOwner(w http.ResponseWriter, r *http.Request, slug Slug, mailboxId openapi_types.UUID) {
 	var request AssignMailboxOwnerRequestObject
@@ -9938,6 +10677,67 @@ func (sh *strictHandler) MoveReceivedMessage(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+// GetMessageLabels operation middleware
+func (sh *strictHandler) GetMessageLabels(w http.ResponseWriter, r *http.Request, slug string, messageId openapi_types.UUID) {
+	var request GetMessageLabelsRequestObject
+
+	request.Slug = slug
+	request.MessageId = messageId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMessageLabels(ctx, request.(GetMessageLabelsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMessageLabels")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMessageLabelsResponseObject); ok {
+		if err := validResponse.VisitGetMessageLabelsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ChangeMessageLabel operation middleware
+func (sh *strictHandler) ChangeMessageLabel(w http.ResponseWriter, r *http.Request, slug string, messageId openapi_types.UUID) {
+	var request ChangeMessageLabelRequestObject
+
+	request.Slug = slug
+	request.MessageId = messageId
+
+	var body ChangeMessageLabelJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ChangeMessageLabel(ctx, request.(ChangeMessageLabelRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ChangeMessageLabel")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ChangeMessageLabelResponseObject); ok {
+		if err := validResponse.VisitChangeMessageLabelResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // DownloadReceivedRaw operation middleware
 func (sh *strictHandler) DownloadReceivedRaw(w http.ResponseWriter, r *http.Request, slug Slug, messageId openapi_types.UUID) {
 	var request DownloadReceivedRawRequestObject
@@ -10003,204 +10803,209 @@ func (sh *strictHandler) ProvisionWorkspaceUser(w http.ResponseWriter, r *http.R
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"vwAAAP//",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

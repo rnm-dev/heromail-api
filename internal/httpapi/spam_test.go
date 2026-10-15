@@ -84,7 +84,7 @@ func TestSpamFolderDeliveryMoveAndPrivacy(t *testing.T) {
 	if again != after {
 		t.Fatal("repeat move changes UID")
 	}
-	if r = h.do(http.MethodPut, path, `{"folder":"Other"}`, token); r.Code != 400 {
+	if r = h.do(http.MethodPut, path, `{"folder":"bad/name"}`, token); r.Code != 400 {
 		t.Fatalf("invalid destination %d", r.Code)
 	}
 	if r = h.do(http.MethodPut, path, `{"folder":"Junk"}`, token); r.Code != 200 {

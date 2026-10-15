@@ -159,7 +159,11 @@ func (s *Server) ListMessages(ctx context.Context, request ListMessagesRequestOb
 	if limit < 1 || limit > 200 || offset < 0 {
 		return ListMessages404JSONResponse{NotFoundJSONResponse(errorBody("not_found", "invalid pagination"))}, nil
 	}
-	msgs, err := s.inbound.FilterMessages(ctx, box.ID, folder, search, limit, offset, unread, starred)
+	label := ""
+	if request.Params.Label != nil {
+		label = request.Params.Label.String()
+	}
+	msgs, err := s.inbound.FilterMessages(ctx, box.ID, folder, search, limit, offset, unread, starred, label)
 
 	if err != nil {
 		log.Printf("list messages: %v", err)
@@ -312,7 +316,7 @@ func (s *Server) MoveReceivedMessage(ctx context.Context, r MoveReceivedMessageR
 		return MoveReceivedMessagedefaultJSONResponse{StatusCode: code, Body: errorBody("move_failed", msg)}, nil
 	}
 	if r.Body == nil || !inbound.IsWebFolder(string(r.Body.Folder)) {
-		return fail(400, "folder must be INBOX, Junk, Archive or Trash")
+		return fail(400, "invalid folder name")
 	}
 	ws, _, err := s.scope(ctx, string(r.Slug), workspace.RoleMember)
 	if err != nil {
@@ -331,6 +335,9 @@ func (s *Server) MoveReceivedMessage(ctx context.Context, r MoveReceivedMessageR
 		expected = &value
 	}
 	moved, err := s.inbound.MoveMessageFrom(ctx, msg.MailboxID, msg.ID, string(r.Body.Folder), expected)
+	if errors.Is(err, inbound.ErrNoMailbox) {
+		return fail(404, "destination folder not found")
+	}
 	if errors.Is(err, inbound.ErrMoveConflict) {
 		return fail(409, "Письмо уже перемещено. Обновите список.")
 	}
