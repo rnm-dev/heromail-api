@@ -754,6 +754,33 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /messages/received-search:
+    get:
+      operationId: searchReceivedMessages
+      security: [{ session: [] }]
+      summary: Search accessible received messages with global pagination
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 200 } }
+        - { name: from, in: query, schema: { type: string, maxLength: 320 } }
+        - { name: to, in: query, schema: { type: string, maxLength: 320 } }
+        - { name: after, in: query, description: First received date inclusive in UTC (YYYY-MM-DD), schema: { type: string } }
+        - { name: before, in: query, description: Last received date inclusive in UTC (YYYY-MM-DD), schema: { type: string } }
+        - { name: attachments, in: query, schema: { type: boolean } }
+        - { name: unread, in: query, schema: { type: boolean } }
+        - { name: starred, in: query, schema: { type: boolean } }
+        - { name: box, in: query, schema: { type: string, format: uuid } }
+        - { name: folder, in: query, schema: { type: string, enum: [All, INBOX, Junk, Archive, Trash], default: INBOX } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        '200':
+          description: Matching messages ordered by received date and ID descending
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReceivedSearchPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /messages/search:
     get:
       tags: [emails]
@@ -1964,6 +1991,21 @@ components:
         id: { type: string }
         filename: { type: string }
         size_bytes: { type: integer, format: int64 }
+
+    ReceivedSearchResult:
+      type: object
+      required: [workspace, message]
+      properties:
+        workspace: { type: string }
+        message: { $ref: '#/components/schemas/ReceivedMessage' }
+    ReceivedSearchPage:
+      type: object
+      required: [messages, has_more]
+      properties:
+        messages:
+          type: array
+          items: { $ref: '#/components/schemas/ReceivedSearchResult' }
+        has_more: { type: boolean }
 
     ReceivedMessage:
       type: object

@@ -107,11 +107,14 @@ const messageColumns = ` msg.id, msg.mailbox_id, msg.envelope_from, msg.envelope
 	msg.from_addr, msg.from_name, msg.subject, msg.sent_at, msg.text_body, msg.html_body,
 	msg.size_bytes, msg.spf_pass, msg.dkim_pass, msg.read_at, msg.received_at, msg.folder, ('\Flagged'=ANY(msg.imap_flags))`
 
-func scanMessage(row pgx.Row) (*Message, error) {
+func scanMessage(row pgx.Row) (*Message, error) { return scanMessageExtra(row) }
+
+func scanMessageExtra(row pgx.Row, extra ...any) (*Message, error) {
 	var m Message
-	err := row.Scan(&m.ID, &m.MailboxID, &m.EnvelopeFrom, &m.EnvelopeTo, &m.MessageID,
+	args := []any{&m.ID, &m.MailboxID, &m.EnvelopeFrom, &m.EnvelopeTo, &m.MessageID,
 		&m.FromAddr, &m.FromName, &m.Subject, &m.SentAt, &m.TextBody, &m.HTMLBody,
-		&m.SizeBytes, &m.SPFPass, &m.DKIMPass, &m.ReadAt, &m.ReceivedAt, &m.Folder, &m.Starred)
+		&m.SizeBytes, &m.SPFPass, &m.DKIMPass, &m.ReadAt, &m.ReceivedAt, &m.Folder, &m.Starred}
+	err := row.Scan(append(args, extra...)...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNoMailbox
 	}
