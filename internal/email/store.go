@@ -286,22 +286,23 @@ func scanAttachment(row pgx.Row) (*Attachment, error) {
 
 // InsertAttachmentParams is the data needed to record a stored upload.
 type InsertAttachmentParams struct {
-	WorkspaceID string
-	Filename    string
-	ContentType string
-	SizeBytes   int64
-	ChecksumSHA []byte
-	StorageKey  string
+	UploadOwnerID string
+	WorkspaceID   string
+	Filename      string
+	ContentType   string
+	SizeBytes     int64
+	ChecksumSHA   []byte
+	StorageKey    string
 }
 
 // InsertAttachment records an upload as unattached (email_id NULL). It is
 // attached to a message later, by AttachToEmail.
 func (s *Store) InsertAttachment(ctx context.Context, p InsertAttachmentParams) (*Attachment, error) {
 	return scanAttachment(s.pool.QueryRow(ctx, `
-		INSERT INTO attachments (workspace_id, filename, content_type, size_bytes, checksum_sha256, storage_key)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO attachments (workspace_id, filename, content_type, size_bytes, checksum_sha256, storage_key, upload_owner_id)
+		VALUES ($1, $2, $3, $4, $5, $6, nullif($7, '')::uuid)
 		RETURNING`+attachmentColumns,
-		p.WorkspaceID, p.Filename, p.ContentType, p.SizeBytes, p.ChecksumSHA, p.StorageKey,
+		p.WorkspaceID, p.Filename, p.ContentType, p.SizeBytes, p.ChecksumSHA, p.StorageKey, p.UploadOwnerID,
 	))
 }
 
@@ -319,8 +320,8 @@ func (s *Store) DeleteAttachment(ctx context.Context, workspaceID, id string) er
 func (s *Store) AttachmentsByIDs(ctx context.Context, workspaceID string, ids []string) ([]Attachment, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT`+attachmentColumns+`
-		 FROM attachments WHERE workspace_id = $1 AND id = ANY($2) AND email_id IS NULL`,
-		workspaceID, ids)
+		 FROM attachments WHERE workspace_id = $1 AND id = ANY($2) AND email_id IS NULL AND (upload_owner_id IS NULL OR upload_owner_id = nullif($3, '')::uuid)`,
+		workspaceID, ids, uploadOwner(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("load attachments: %w", err)
 	}
@@ -344,8 +345,8 @@ func (s *Store) AttachmentsByIDs(ctx context.Context, workspaceID string, ids []
 func (s *Store) AttachToEmail(ctx context.Context, workspaceID, emailID string, ids []string) (int64, error) {
 	tag, err := s.pool.Exec(ctx,
 		`UPDATE attachments SET email_id = $1
-		 WHERE workspace_id = $2 AND id = ANY($3) AND email_id IS NULL`,
-		emailID, workspaceID, ids)
+		 WHERE workspace_id = $2 AND id = ANY($3) AND email_id IS NULL AND (upload_owner_id IS NULL OR upload_owner_id = nullif($4, '')::uuid)`,
+		emailID, workspaceID, ids, uploadOwner(ctx))
 	if err != nil {
 		return 0, fmt.Errorf("attach: %w", err)
 	}

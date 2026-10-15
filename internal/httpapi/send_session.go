@@ -87,7 +87,7 @@ func (s *Server) SendWorkspaceEmail(ctx context.Context, request SendWorkspaceEm
 			return nil, err
 		}
 	}
-	msg, err := s.emails.Send(ctx, workspaceID, idempotencyKey, email.SendRequest{
+	msg, err := s.emails.Send(sessionUploadContext(ctx), workspaceID, idempotencyKey, email.SendRequest{
 		From:          from,
 		InReplyTo:     reply.InReplyTo,
 		References:    reply.References,

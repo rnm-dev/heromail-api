@@ -86,8 +86,8 @@ func TestComposePipeline(t *testing.T) {
 
 func TestComposeAttachmentUpload(t *testing.T) {
 	h := newHarness(t)
-	token, _, _ := h.registerUser("compose-upload")
-	outsider, _, _ := h.registerUser("compose-upload-other")
+	token, userID, _ := h.registerUser("compose-upload")
+	outsider, outsiderID, _ := h.registerUser("compose-upload-other")
 	ws := h.workspaceFor(token, "compose-upload")
 	slug := h.slugFor(ws)
 	t.Cleanup(func() { h.pool.Exec(t.Context(), `DELETE FROM workspaces WHERE id=$1`, ws) })
@@ -121,6 +121,10 @@ func TestComposeAttachmentUpload(t *testing.T) {
 		ID string `json:"id"`
 	}
 	json.Unmarshal(r.Body.Bytes(), &a)
+	var uploadOwner string
+	if err := h.pool.QueryRow(t.Context(), `SELECT upload_owner_id FROM attachments WHERE id=$1`, a.ID).Scan(&uploadOwner); err != nil || uploadOwner != userID {
+		t.Fatalf("upload owner: %s %v", uploadOwner, err)
+	}
 	var owner string
 	if err := h.pool.QueryRow(t.Context(), `SELECT workspace_id FROM attachments WHERE id=$1`, a.ID).Scan(&owner); err != nil || owner != ws {
 		t.Fatalf("attachment owner %s %v", owner, err)
@@ -128,6 +132,17 @@ func TestComposeAttachmentUpload(t *testing.T) {
 	domain := h.verifiedDomainFor(t, ws)
 	if _, err := h.pool.Exec(t.Context(), `INSERT INTO mailboxes(domain_id,local_part) SELECT id,'hello' FROM domains WHERE workspace_id=$1 AND domain=$2`, ws, domain); err != nil {
 		t.Fatal(err)
+	}
+	// Sharing a workspace does not allow claiming another person's upload.
+	if _, err := h.pool.Exec(t.Context(), `INSERT INTO workspace_members(workspace_id,user_id,role) VALUES($1,$2,'admin')`, ws, outsiderID); err != nil {
+		t.Fatal(err)
+	}
+	payload := fmt.Sprintf(`{"from":"hello@%s","to":["to@example.test"],"text":"see attachment","attachments":[%q]}`, domain, a.ID)
+	if r := h.do("POST", "/workspaces/"+slug+"/emails", payload, outsider); r.Code != 400 {
+		t.Fatalf("peer attachment: %d %s", r.Code, r.Body)
+	}
+	if r := h.do("POST", "/v1/emails", payload, h.apiKeyFor(ws)); r.Code != 400 {
+		t.Fatalf("API key attachment: %d %s", r.Code, r.Body)
 	}
 	r = h.do("POST", "/workspaces/"+slug+"/emails", fmt.Sprintf(`{"from":"hello@%s","to":["to@example.test"],"text":"see attachment","attachments":[%q]}`, domain, a.ID), token)
 	if r.Code != 202 {

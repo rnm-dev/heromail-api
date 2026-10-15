@@ -326,12 +326,13 @@ func (s *Service) UploadAttachment(ctx context.Context, workspaceID, filename, c
 	}
 
 	attachment, err := s.store.InsertAttachment(ctx, InsertAttachmentParams{
-		WorkspaceID: workspaceID,
-		Filename:    filename,
-		ContentType: contentType,
-		SizeBytes:   int64(len(data)),
-		ChecksumSHA: sum[:],
-		StorageKey:  storageKey,
+		WorkspaceID:   workspaceID,
+		UploadOwnerID: uploadOwner(ctx),
+		Filename:      filename,
+		ContentType:   contentType,
+		SizeBytes:     int64(len(data)),
+		ChecksumSHA:   sum[:],
+		StorageKey:    storageKey,
 	})
 	if err != nil {
 		_ = s.blobs.Delete(ctx, storageKey)

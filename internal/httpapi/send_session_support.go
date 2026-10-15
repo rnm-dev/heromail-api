@@ -49,7 +49,7 @@ func (s *Server) UploadWorkspaceAttachment(ctx context.Context, request UploadWo
 	filename := part.FileName()
 	contentType := part.Header.Get("Content-Type")
 
-	attachment, err := s.emails.UploadAttachment(ctx, workspaceID, filename, contentType, part)
+	attachment, err := s.emails.UploadAttachment(sessionUploadContext(ctx), workspaceID, filename, contentType, part)
 	switch {
 	case errors.Is(err, email.ErrStorageNotConfigured):
 		return UploadWorkspaceAttachment503JSONResponse(errorBody("storage_not_configured", "attachment storage is not configured on this deployment")), nil
@@ -101,4 +101,12 @@ func (s *Server) GetWorkspaceEmail(ctx context.Context, request GetWorkspaceEmai
 		return nil, err
 	}
 	return GetWorkspaceEmail200JSONResponse(emailToAPI(msg, attachments)), nil
+}
+
+func sessionUploadContext(ctx context.Context) context.Context {
+	user, ok := account.CurrentUser(ctx)
+	if ok {
+		return email.WithUploadOwner(ctx, user.ID)
+	}
+	return ctx
 }

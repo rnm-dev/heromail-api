@@ -34,6 +34,88 @@ tags:
 security: []
 
 paths:
+  /messages/drafts:
+    get:
+      operationId: listDrafts
+      security: [{ session: [] }]
+      parameters:
+        - { name: offset, in: query, schema: { type: integer, minimum: 0 } }
+      responses:
+        '200':
+          description: Own drafts in current workspaces, newest first, 50 per page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [drafts, has_more]
+                properties:
+                  drafts: { type: array, items: { $ref: '#/components/schemas/MailDraft' } }
+                  has_more: { type: boolean }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /workspaces/{slug}/drafts/{id}:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { type: string } }
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getDraft
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: Draft snapshot; version zero creates, subsequent writes compare versions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailDraft' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Changed on another device or already being sent
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    put:
+      operationId: saveDraft
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version, data]
+              properties:
+                version: { type: integer, minimum: 0 }
+                data: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Draft snapshot; version zero creates, subsequent writes compare versions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailDraft' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Changed on another device or already being sent
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    delete:
+      operationId: deleteDraft
+      security: [{ session: [] }]
+      parameters:
+        - { name: version, in: query, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '204': { description: Deleted }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Changed on another device or already being sent
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /workspaces/{slug}/emails/{id}:
     parameters:
       - { name: slug, in: path, required: true, schema: { type: string } }
@@ -1578,6 +1660,15 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    MailDraft:
+      type: object
+      required: [id, workspace, version, data, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        workspace: { type: string }
+        version: { type: integer }
+        data: { type: object, additionalProperties: true }
+        updated_at: { type: string, format: date-time }
     CalendarSettings:
       type: object
       required: [timezone]
