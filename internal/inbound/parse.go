@@ -7,6 +7,7 @@ import (
 	"net/mail"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	gomessage "github.com/emersion/go-message"
 	_ "github.com/emersion/go-message/charset"
@@ -35,8 +36,19 @@ type parsed struct {
 // lose it, and malformed is exactly what spam and broken senders produce. Every
 // field is best-effort, and `raw` is kept whole so anything missed here can be
 // recovered by reparsing later.
-func parse(raw []byte) parsed {
-	var out parsed
+func parse(raw []byte) (out parsed) {
+	// MIME labelled UTF-8 can still contain invalid bytes, and a capped body can
+	// end midway through a rune. PostgreSQL text also rejects NUL. Repair only
+	// display fields: raw MIME remains byte-for-byte intact for downloads.
+	defer func() {
+		for _, field := range []*string{&out.FromAddr, &out.FromName, &out.Subject, &out.Text, &out.HTML} {
+			*field = strings.ReplaceAll(strings.ToValidUTF8(*field, "\uFFFD"), "\x00", "\uFFFD")
+		}
+		// A repaired identifier could merge two distinct malformed messages.
+		if !utf8.ValidString(out.MessageID) || strings.ContainsRune(out.MessageID, 0) {
+			out.MessageID = ""
+		}
+	}()
 
 	entity, err := gomessage.Read(bytes.NewReader(raw))
 	if err != nil && entity == nil {

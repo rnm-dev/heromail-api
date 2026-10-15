@@ -3,6 +3,7 @@ package inbound
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestParseExtractsDisplayFields(t *testing.T) {
@@ -130,5 +131,18 @@ func TestSplitAddr(t *testing.T) {
 			t.Errorf("splitAddr(%q) = %q, %q, %v; want %q, %q, %v",
 				tc.in, local, domain, ok, tc.local, tc.domain, tc.ok)
 		}
+	}
+}
+
+func TestParseMalformedTextIsSQLSafe(t *testing.T) {
+	raw := []byte("From: sender@example.test\r\nSubject: broken \xb4\r\nMessage-ID: <bad\xff@example.test>\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nbody \xff and NUL \x00 end")
+	got := parse(raw)
+	for name, value := range map[string]string{"subject": got.Subject, "text": got.Text, "html": got.HTML, "from": got.FromAddr, "name": got.FromName, "id": got.MessageID} {
+		if !utf8.ValidString(value) || strings.ContainsRune(value, 0) {
+			t.Errorf("%s is not PostgreSQL UTF-8 text: %q", name, value)
+		}
+	}
+	if got.MessageID != "" {
+		t.Fatal("malformed message ID must not collide with a repaired ID")
 	}
 }
