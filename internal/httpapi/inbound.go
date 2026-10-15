@@ -144,7 +144,7 @@ func (s *Server) ListMessages(ctx context.Context, request ListMessagesRequestOb
 	if request.Params.Folder != nil {
 		folder = string(*request.Params.Folder)
 	}
-	if !inbound.IsWebFolder(folder) {
+	if !inbound.IsWebFolder(folder) && folder != "All" {
 		return ListMessages404JSONResponse{NotFoundJSONResponse(errorBody("not_found", "folder not found"))}, nil
 	}
 	// A blank q is not a search for nothing — it is the unfiltered folder, which
@@ -154,12 +154,13 @@ func (s *Server) ListMessages(ctx context.Context, request ListMessagesRequestOb
 		search = strings.TrimSpace(*request.Params.Q)
 	}
 
-	var msgs []inbound.Message
-	if search != "" {
-		msgs, err = s.inbound.SearchFolderMessages(ctx, box.ID, folder, search, limit, offset)
-	} else {
-		msgs, err = s.inbound.ListFolderMessages(ctx, box.ID, folder, limit, offset)
+	unread := request.Params.Unread != nil && *request.Params.Unread
+	starred := request.Params.Starred != nil && *request.Params.Starred
+	if limit < 1 || limit > 200 || offset < 0 {
+		return ListMessages404JSONResponse{NotFoundJSONResponse(errorBody("not_found", "invalid pagination"))}, nil
 	}
+	msgs, err := s.inbound.FilterMessages(ctx, box.ID, folder, search, limit, offset, unread, starred)
+
 	if err != nil {
 		log.Printf("list messages: %v", err)
 		return nil, err
@@ -237,6 +238,7 @@ func mailboxToAPI(m *inbound.Mailbox) Mailbox {
 
 func receivedMessageToAPI(m *inbound.Message) ReceivedMessage {
 	return ReceivedMessage{
+		Starred:      &m.Starred,
 		Folder:       m.Folder,
 		Id:           mustUUID(m.ID),
 		MailboxId:    mustUUID(m.MailboxID),

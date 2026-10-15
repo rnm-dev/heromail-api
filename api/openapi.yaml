@@ -696,6 +696,48 @@ paths:
               schema: { $ref: '#/components/schemas/Workspace' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /messages/unread-counts:
+    get:
+      operationId: getUnreadCounts
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: Unread counts across accessible mailboxes by folder, plus starred
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /workspaces/{slug}/messages/{messageId}/flags:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/Slug' } }
+      - { name: messageId, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      operationId: updateMessageFlags
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                read: { type: boolean }
+                starred: { type: boolean }
+      responses:
+        '200':
+          description: Updated message flags
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReceivedMessage' }
+        default:
+          description: Update failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /messages/search:
     get:
       tags: [emails]
@@ -930,12 +972,18 @@ paths:
     get:
       tags: [inbound]
       operationId: listMessages
-      summary: Received mail in Inbox or Junk, newest first
+      summary: Received mail with server-side filters, newest first
       security: [{ session: [] }]
       parameters:
+        - name: unread
+          in: query
+          schema: { type: boolean, default: false }
+        - name: starred
+          in: query
+          schema: { type: boolean, default: false }
         - name: folder
           in: query
-          schema: { type: string, enum: [INBOX, Junk, Archive, Trash], default: INBOX }
+          schema: { type: string, enum: [INBOX, Junk, Archive, Trash, All], default: INBOX }
         - name: limit
           in: query
           required: false
@@ -1937,6 +1985,7 @@ components:
         text: { type: string, nullable: true }
         html: { type: string, nullable: true }
         size_bytes: { type: integer }
+        starred: { type: boolean }
         read_at: { type: string, format: date-time, nullable: true }
         received_at: { type: string, format: date-time }
 

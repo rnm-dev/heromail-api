@@ -121,6 +121,23 @@ func TestIMAPPrivateMailboxRoundTrip(t *testing.T) {
 	}
 
 	// System folders exist at mailbox creation; custom folder creation still works.
+
+	// Flagged/Seen are shared between web and a real IMAP client.
+	flagsPath := fmt.Sprintf("/workspaces/%s/messages/%s/flags", h.slugFor(ws), msg.ID)
+	if r := h.do("PATCH", flagsPath, `{"starred":true,"read":true}`, token); r.Code != 200 {
+		t.Fatal(r.Body)
+	}
+	flagged, _ := fetch(c, true)
+	if !slices.Contains(flagged.Flags, imap.FlaggedFlag) || !slices.Contains(flagged.Flags, imap.SeenFlag) {
+		t.Fatalf("web flags absent from IMAP: %v", flagged.Flags)
+	}
+	if err = c.Store(set, imap.RemoveFlags, []interface{}{imap.FlaggedFlag, imap.SeenFlag}, nil); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := store.MessageByID(ctx, ws, msg.ID)
+	if err != nil || updated.Starred || updated.ReadAt != nil {
+		t.Fatalf("IMAP flags absent from web: %+v %v", updated, err)
+	}
 	if err = c.Create("Notes"); err != nil {
 		t.Fatal(err)
 	}

@@ -105,13 +105,13 @@ func (s *Store) MailboxesForWorkspace(ctx context.Context, workspaceID string) (
 // column list usable everywhere instead of two that can drift apart.
 const messageColumns = ` msg.id, msg.mailbox_id, msg.envelope_from, msg.envelope_to, msg.message_id,
 	msg.from_addr, msg.from_name, msg.subject, msg.sent_at, msg.text_body, msg.html_body,
-	msg.size_bytes, msg.spf_pass, msg.dkim_pass, msg.read_at, msg.received_at, msg.folder`
+	msg.size_bytes, msg.spf_pass, msg.dkim_pass, msg.read_at, msg.received_at, msg.folder, ('\Flagged'=ANY(msg.imap_flags))`
 
 func scanMessage(row pgx.Row) (*Message, error) {
 	var m Message
 	err := row.Scan(&m.ID, &m.MailboxID, &m.EnvelopeFrom, &m.EnvelopeTo, &m.MessageID,
 		&m.FromAddr, &m.FromName, &m.Subject, &m.SentAt, &m.TextBody, &m.HTMLBody,
-		&m.SizeBytes, &m.SPFPass, &m.DKIMPass, &m.ReadAt, &m.ReceivedAt, &m.Folder)
+		&m.SizeBytes, &m.SPFPass, &m.DKIMPass, &m.ReadAt, &m.ReceivedAt, &m.Folder, &m.Starred)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNoMailbox
 	}
@@ -180,13 +180,18 @@ func (s *Store) ListMessages(ctx context.Context, mailboxID string, limit int, o
 // message remembers whichever of those stuck, and asking them which field it
 // was is a worse product than one query over all three.
 func (s *Store) SearchFolderMessages(ctx context.Context, mailboxID, folder, query string, limit, skip int) ([]Message, error) {
+	return s.FilterMessages(ctx, mailboxID, folder, query, limit, skip, false, false)
+}
+
+func (s *Store) FilterMessages(ctx context.Context, mailboxID, folder, query string, limit, skip int, unread, starred bool) ([]Message, error) {
 	rows, err := s.pool.Query(ctx, `
  SELECT`+messageColumns+`
  FROM messages msg
- WHERE msg.mailbox_id=$1 AND msg.folder=$4
+ WHERE msg.mailbox_id=$1 AND ($4='All' OR msg.folder=$4)
+ AND (NOT $6 OR msg.read_at IS NULL) AND (NOT $7 OR '\Flagged'=ANY(msg.imap_flags))
    AND strpos(lower(concat_ws(' ', msg.subject, msg.from_addr, msg.from_name, msg.text_body)), lower($5)) > 0
  ORDER BY msg.received_at DESC, msg.id DESC LIMIT $2 OFFSET $3`,
-		mailboxID, limit, skip, folder, query)
+		mailboxID, limit, skip, folder, query, unread, starred)
 	if err != nil {
 		return nil, err
 	}

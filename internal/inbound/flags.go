@@ -1,0 +1,38 @@
+package inbound
+
+import (
+	"context"
+	"strings"
+)
+
+// One row UPDATE merges only supplied flags, preserving concurrent IMAP flags.
+func (s *Store) UpdateFlags(ctx context.Context, box, id string, read, starred *bool) (*Message, error) {
+	return scanMessage(s.pool.QueryRow(ctx, `UPDATE messages SET
+ read_at=CASE WHEN $3::boolean IS NULL THEN read_at WHEN $3 THEN coalesce(read_at,now()) ELSE NULL END,
+ imap_flags=CASE WHEN $4::boolean IS NULL THEN imap_flags WHEN $4 THEN array_append(array_remove(imap_flags,'\Flagged'),'\Flagged') ELSE array_remove(imap_flags,'\Flagged') END
+ WHERE mailbox_id=$1 AND id=$2 RETURNING `+strings.ReplaceAll(messageColumns, "msg.", ""), box, id, read, starred))
+}
+
+func (s *Store) UnreadCounts(ctx context.Context, userID string) (map[string]int, error) {
+	rows, err := s.pool.Query(ctx, `SELECT msg.folder,count(*),count(*) FILTER (WHERE '\Flagged'=ANY(msg.imap_flags))
+ FROM messages msg JOIN mailboxes m ON m.id=msg.mailbox_id JOIN domains d ON d.id=m.domain_id
+ JOIN workspaces w ON w.id=coalesce(m.personal_workspace_id,d.workspace_id)
+ JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=$1
+ WHERE msg.read_at IS NULL AND (coalesce(m.owner_user_id,w.personal_owner_id) IS NULL OR coalesce(m.owner_user_id,w.personal_owner_id)=$1)
+ GROUP BY msg.folder`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{"INBOX": 0, "Junk": 0, "Archive": 0, "Trash": 0, "starred": 0}
+	for rows.Next() {
+		var folder string
+		var count, starred int
+		if err := rows.Scan(&folder, &count, &starred); err != nil {
+			return nil, err
+		}
+		out[folder] = count
+		out["starred"] += starred
+	}
+	return out, rows.Err()
+}
