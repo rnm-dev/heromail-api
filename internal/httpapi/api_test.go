@@ -224,6 +224,8 @@ func newHarness(t *testing.T) *harness {
 		limiter,
 	)
 
+	// Isolate each test run without disabling real IP rate limits.
+	nonce := uint64(time.Now().UnixNano())
 	return &harness{
 		t:        t,
 		handler:  Router(server, auth.New(pool), accounts),
@@ -233,7 +235,7 @@ func newHarness(t *testing.T) *harness {
 		worker:   email.NewWorker(emailStore, mail, blobs, domains),
 		blobs:    blobs,
 		limiter:  limiter,
-		clientIP: fmt.Sprintf("198.51.100.%d", time.Now().UnixNano()%250+1),
+		clientIP: fmt.Sprintf("2001:db8::%x:%x:%x:%x", nonce>>48, (nonce>>32)&0xffff, (nonce>>16)&0xffff, nonce&0xffff),
 		domains:  domains,
 		accounts: accounts,
 		pool:     pool,
@@ -526,7 +528,7 @@ func TestLoginAndSessionLifecycle(t *testing.T) {
 	wrong := h.do(http.MethodPost, "/auth/login",
 		fmt.Sprintf(`{"email":%q,"password":"wrong-password-xx"}`, addr), "")
 	unknown := h.do(http.MethodPost, "/auth/login",
-		`{"email":"nobody@acme.test","password":"wrong-password-xx"}`, "")
+		fmt.Sprintf(`{"email":%q,"password":"wrong-password-xx"}`, "unknown-"+addr), "")
 	if wrong.Code != http.StatusUnauthorized || unknown.Code != http.StatusUnauthorized {
 		t.Fatalf("statuses = %d/%d, want 401/401", wrong.Code, unknown.Code)
 	}
@@ -547,7 +549,7 @@ func TestResendVerificationDoesNotLeakAccounts(t *testing.T) {
 	_, _, addr := h.registerUser("resend")
 
 	known := h.do(http.MethodPost, "/auth/resend-verification", fmt.Sprintf(`{"email":%q}`, addr), "")
-	unknown := h.do(http.MethodPost, "/auth/resend-verification", `{"email":"nobody@acme.test"}`, "")
+	unknown := h.do(http.MethodPost, "/auth/resend-verification", fmt.Sprintf(`{"email":%q}`, "unknown-"+addr), "")
 
 	if known.Code != http.StatusAccepted || unknown.Code != http.StatusAccepted {
 		t.Errorf("statuses = %d/%d, want 202/202", known.Code, unknown.Code)

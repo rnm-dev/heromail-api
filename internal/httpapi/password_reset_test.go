@@ -139,8 +139,11 @@ func TestForgotPasswordDoesNotLeakAccounts(t *testing.T) {
 	h := newHarness(t)
 	_, _, addr := h.registerUser("reset-leak")
 
+	// Each run gets its own rate-limit bucket; keep the repeated request below
+	// on that same unknown address so the no-delivery assertion stays meaningful.
+	unknownBody := fmt.Sprintf(`{"email":%q}`, "unknown-"+addr)
 	known := h.do(http.MethodPost, "/auth/forgot-password", fmt.Sprintf(`{"email":%q}`, addr), "")
-	unknown := h.do(http.MethodPost, "/auth/forgot-password", `{"email":"nobody@acme.test"}`, "")
+	unknown := h.do(http.MethodPost, "/auth/forgot-password", unknownBody, "")
 
 	if known.Code != http.StatusAccepted || unknown.Code != http.StatusAccepted {
 		t.Errorf("statuses = %d/%d, want 202/202", known.Code, unknown.Code)
@@ -151,7 +154,7 @@ func TestForgotPasswordDoesNotLeakAccounts(t *testing.T) {
 
 	// Nothing must have been sent for the unknown address.
 	h.mail.reset()
-	h.do(http.MethodPost, "/auth/forgot-password", `{"email":"nobody@acme.test"}`, "")
+	h.do(http.MethodPost, "/auth/forgot-password", unknownBody, "")
 	if h.mail.count() != 0 {
 		t.Errorf("%d messages sent for an unregistered address", h.mail.count())
 	}
