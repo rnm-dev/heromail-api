@@ -196,6 +196,8 @@ func (s *Server) GetMessage(ctx context.Context, request GetMessageRequestObject
 	out.Attachments = &items
 	out.AttachmentsOmitted = &presentation.AttachmentsOmitted
 	out.ReplyTo = &presentation.ReplyTo
+	out.To = &presentation.To
+	out.Cc = &presentation.Cc
 	out.InlineMedia = &presentation.InlineMedia
 	out.InlineMediaOmitted = &presentation.Omitted
 	if out.CalendarPreview, err = s.calendarPreview(ctx, msg, presentation); err != nil {
@@ -320,7 +322,18 @@ func (s *Server) MoveReceivedMessage(ctx context.Context, r MoveReceivedMessageR
 	if err != nil {
 		return fail(404, "message not found")
 	}
-	moved, err := s.inbound.MoveMessage(ctx, msg.MailboxID, msg.ID, string(r.Body.Folder))
+	var expected *string
+	if r.Body.ExpectedFolder != nil {
+		value := string(*r.Body.ExpectedFolder)
+		if !inbound.IsWebFolder(value) {
+			return fail(400, "invalid expected folder")
+		}
+		expected = &value
+	}
+	moved, err := s.inbound.MoveMessageFrom(ctx, msg.MailboxID, msg.ID, string(r.Body.Folder), expected)
+	if errors.Is(err, inbound.ErrMoveConflict) {
+		return fail(409, "Письмо уже перемещено. Обновите список.")
+	}
 	if err != nil {
 		return nil, err
 	}

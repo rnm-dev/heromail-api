@@ -16,6 +16,8 @@ import (
 // Presentation is derived only for an authorized detail request, never a list.
 // Old messages benefit without rewriting their stored MIME or display columns.
 type Presentation struct {
+	To                 []string
+	Cc                 []string
 	Attachments        []ReceivedAttachment
 	AttachmentsOmitted bool
 	ReplyTo            []string
@@ -40,12 +42,27 @@ func (s *Store) Presentation(ctx context.Context, mailboxID, messageID string) (
 var messageIDPattern = regexp.MustCompile(`<[^<>\s\x00-\x1f\x7f]{1,898}>`)
 
 func Present(raw []byte) Presentation {
-	out := Presentation{ReplyTo: []string{}, InlineMedia: map[string]string{}}
+	out := Presentation{To: []string{}, Cc: []string{}, ReplyTo: []string{}, InlineMedia: map[string]string{}}
 	out.Attachments, _, out.AttachmentsOmitted = ScanAttachments(raw, "")
 	// Unknown charsets need not prevent decoding binary MIME siblings.
 	e, _ := gomessage.Read(bytes.NewReader(raw))
 	if e == nil {
 		return out
+	}
+	for header, dest := range map[string]*[]string{"To": &out.To, "Cc": &out.Cc} {
+		*dest = []string{}
+		fields := e.Header.FieldsByKey(header)
+		for fields.Next() {
+			list, err := mail.ParseAddressList(decodeHeader(fields.Value()))
+			if err != nil {
+				continue
+			}
+			for _, a := range list {
+				if !strings.ContainsAny(a.Address, "\r\n") {
+					*dest = append(*dest, a.Address)
+				}
+			}
+		}
 	}
 	for _, header := range []string{"Reply-To", "From"} {
 		list, err := mail.ParseAddressList(decodeHeader(e.Header.Get(header)))

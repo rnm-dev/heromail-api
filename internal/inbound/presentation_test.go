@@ -48,3 +48,15 @@ func TestPresentationHeadersAndUnknownCharset(t *testing.T) {
 		t.Fatal("unknown text charset hid image sibling")
 	}
 }
+
+func TestPresentationVisibleRecipients(t *testing.T) {
+	p := Present([]byte("From: sender@example.test\r\nTo: Me <me@example.test>, Team <team@example.test>\r\nCc: Other <other@example.test>\r\nCc: second@example.test\r\nBcc: hidden@example.test\r\n\r\nbody"))
+	if len(p.To) != 2 || p.To[0] != "me@example.test" || len(p.Cc) != 2 || p.Cc[1] != "second@example.test" {
+		t.Fatalf("visible recipients: %+v", p)
+	}
+	for _, a := range append(p.To, p.Cc...) {
+		if a == "hidden@example.test" {
+			t.Fatal("Bcc leaked")
+		}
+	}
+}

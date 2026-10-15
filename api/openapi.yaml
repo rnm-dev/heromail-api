@@ -738,6 +738,22 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /workspaces/{slug}/messages/{messageId}/raw:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/Slug' } }
+      - { name: messageId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: downloadReceivedRaw
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: Original MIME message as a forced download
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /messages/search:
     get:
       tags: [emails]
@@ -1108,6 +1124,7 @@ paths:
               type: object
               required: [folder]
               properties:
+                expected_folder: { type: string, enum: [INBOX, Junk, Archive, Trash] }
                 folder: { type: string, enum: [INBOX, Junk, Archive, Trash] }
       responses:
         '200':
@@ -1955,6 +1972,12 @@ components:
         `raw` is deliberately absent: the source of a message can be megabytes,
         and no view that lists subjects needs it.
       properties:
+        to:
+          type: array
+          items: { type: string }
+        cc:
+          type: array
+          items: { type: string }
         attachments:
           type: array
           items: { $ref: '#/components/schemas/ReceivedAttachment' }
