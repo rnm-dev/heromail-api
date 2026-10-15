@@ -60,13 +60,17 @@ func Router(server *Server, apiKeys *auth.Authenticator, accounts *account.Servi
 
 	root := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
+		if strings.HasPrefix(path, "/contacts/") {
+			r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
+		}
 		if strings.Contains(path, "/drafts/") || strings.HasSuffix(path, "/mail-signatures") {
 			r.Body = http.MaxBytesReader(w, r.Body, 2*1024*1024)
 		}
 		switch {
 		case strings.HasPrefix(path, "/v1/"):
 			apiKeyGuarded.ServeHTTP(w, r)
-		case path == "/workspaces" || strings.HasPrefix(path, "/workspaces/"),
+		case path == "/contacts" || strings.HasPrefix(path, "/contacts/"),
+			path == "/workspaces" || strings.HasPrefix(path, "/workspaces/"),
 			path == "/auth/change-initial-password", path == "/auth/me", path == "/auth/logout", path == "/messages/search", path == "/messages/sent", path == "/messages/unread-counts", path == "/messages/received-search", path == "/messages/drafts":
 			sessionGuarded.ServeHTTP(w, r)
 		default:

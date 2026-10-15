@@ -34,6 +34,72 @@ tags:
 security: []
 
 paths:
+  /contacts:
+    get:
+      operationId: listContacts
+      security: [{ session: [] }]
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 200 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0 } }
+      responses:
+        '200':
+          description: Private address book, 50 per page, case-insensitive name/email search
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [contacts, has_more]
+                properties:
+                  contacts: { type: array, items: { $ref: '#/components/schemas/Contact' } }
+                  has_more: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /contacts/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      operationId: saveContact
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, version]
+              properties:
+                name: { type: string, maxLength: 200 }
+                email: { type: string, maxLength: 254 }
+                version: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Saved; version zero creates, later writes compare versions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Contact' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Stale version or duplicate email in this user's address book
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    delete:
+      operationId: deleteContact
+      security: [{ session: [] }]
+      parameters:
+        - { name: version, in: query, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '204': { description: Deleted }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Stale version or duplicate email in this user's address book
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /workspaces/{slug}/mail-signatures:
     parameters:
       - { name: slug, in: path, required: true, schema: { type: string } }
@@ -1700,6 +1766,14 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    Contact:
+      type: object
+      required: [id, name, email, version]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        email: { type: string, format: email }
+        version: { type: integer }
     MailSignature:
       type: object
       required: [sender, text, version]
