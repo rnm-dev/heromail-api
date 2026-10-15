@@ -209,6 +209,14 @@ func (s *Sender) Send(ctx context.Context, msg provider.Message) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("smtp: build client: %w", err)
 	}
+	if msg.NullReversePath {
+		// go-mail v0.8.1 formats an empty mail.Address as <@>, not <>.
+		// Retain its TLS/auth, MIME and DKIM handling, but set MAIL FROM directly.
+		if err := sendNullReversePath(ctx, client, m); err != nil {
+			return "", fmt.Errorf("smtp: automatic reply: %w", err)
+		}
+		return messageID, nil
+	}
 	if err := client.DialAndSendWithContext(ctx, m); err != nil {
 		return "", fmt.Errorf("smtp: send to %s:%d: %w", s.host, s.port, err)
 	}
@@ -256,3 +264,32 @@ func dkimSigner(d provider.DKIM) (*mail.DKIMSigner, error) {
 
 // Compile-time proof that Sender satisfies the interface.
 var _ provider.Sender = (*Sender)(nil)
+
+func sendNullReversePath(ctx context.Context, client *mail.Client, msg *mail.Msg) error {
+	smtpClient, err := client.DialToSMTPClientWithContext(ctx)
+	if err != nil {
+		return err
+	}
+	defer smtpClient.Close()
+	if err = smtpClient.Mail(""); err != nil {
+		return err
+	}
+	recipients, err := msg.GetRecipients()
+	if err != nil {
+		return err
+	}
+	for _, recipient := range recipients {
+		if err = smtpClient.Rcpt(recipient); err != nil {
+			return err
+		}
+	}
+	writer, err := smtpClient.Data()
+	if err != nil {
+		return err
+	}
+	if _, err = msg.WriteTo(writer); err != nil {
+		return err
+	}
+	// Only DATA acknowledgement determines acceptance. A failed QUIT must not retry it.
+	return writer.Close()
+}

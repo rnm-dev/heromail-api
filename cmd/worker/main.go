@@ -19,6 +19,7 @@ import (
 
 	"github.com/rnm/heromail/backend/internal/calendar"
 	"github.com/rnm/heromail/backend/internal/email"
+	"github.com/rnm/heromail/backend/internal/inbound"
 	"github.com/rnm/heromail/backend/internal/maildomain"
 	smtpprovider "github.com/rnm/heromail/backend/internal/provider/smtp"
 	"github.com/rnm/heromail/backend/internal/ratelimit"
@@ -102,6 +103,7 @@ func main() {
 	dispatchCtx, stopDispatch := context.WithCancel(ctx)
 	defer stopDispatch()
 	go calendar.NewDispatcher(pool, calendarMailer).WithLimiter(calendarLimiter).Run(dispatchCtx)
+	go inbound.NewVacationDispatcher(pool, calendarMailer).WithLimiter(calendarLimiter).Run(dispatchCtx)
 
 	mux := asynq.NewServeMux()
 	mux.HandleFunc(email.TypeSend, worker.HandleSend)

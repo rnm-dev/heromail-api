@@ -76,6 +76,7 @@ func envBytes(name string, fallback int64) int64 {
 // each body is required only when the other is absent, so exactly one is
 // enough and neither is not. This mirrors the CHECK constraint on the table.
 type SendRequest struct {
+	AutoReply      bool     `json:"-"`
 	InReplyTo      string   `json:"-" validate:"max=900"`
 	References     string   `json:"-" validate:"max=900"`
 	From           string   `json:"from"    validate:"required,email"`
@@ -177,7 +178,7 @@ func (s *Service) Send(ctx context.Context, workspaceID, idempotencyKey string, 
 		existing, err := s.store.ByIdempotencyKey(ctx, workspaceID, idempotencyKey)
 		switch {
 		case err == nil:
-			if existing.InReplyTo != req.InReplyTo || existing.References != req.References || existing.FromAddr != req.From || !slices.Equal(existing.ToAddrs, req.To) || !slices.Equal(existing.CcAddrs, req.Cc) || !slices.Equal(existing.BccAddrs, req.Bcc) || existing.Subject != req.Subject || deref(existing.TextBody) != req.Text || deref(existing.HTMLBody) != req.HTML || existing.CalendarICS != req.CalendarICS || existing.CalendarMethod != req.CalendarMethod {
+			if existing.AutoReply != req.AutoReply || existing.InReplyTo != req.InReplyTo || existing.References != req.References || existing.FromAddr != req.From || !slices.Equal(existing.ToAddrs, req.To) || !slices.Equal(existing.CcAddrs, req.Cc) || !slices.Equal(existing.BccAddrs, req.Bcc) || existing.Subject != req.Subject || deref(existing.TextBody) != req.Text || deref(existing.HTMLBody) != req.HTML || existing.CalendarICS != req.CalendarICS || existing.CalendarMethod != req.CalendarMethod {
 				return nil, fmt.Errorf("%w: idempotency key belongs to a different message", ErrValidation)
 			}
 			attached, err := s.store.AttachmentsByEmailID(ctx, existing.ID)
@@ -232,6 +233,7 @@ func (s *Service) Send(ctx context.Context, workspaceID, idempotencyKey string, 
 
 	email, err := s.store.Create(ctx, CreateParams{
 		WorkspaceID:    workspaceID,
+		AutoReply:      req.AutoReply,
 		FromAddr:       req.From,
 		ToAddrs:        req.To,
 		CcAddrs:        req.Cc,

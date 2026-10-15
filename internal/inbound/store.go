@@ -138,13 +138,21 @@ type DeliverParams struct {
 // second row: a sending server that timed out mid-handoff will retry, and the
 // Message-ID is what identifies the retry as the same mail.
 func (s *Store) Deliver(ctx context.Context, p DeliverParams) (*Message, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, p.MailboxID); err != nil {
+		return nil, err
+	}
 	f := parse(p.Raw)
 	folder := deliveryFolder(p.Raw)
-	if _, err := s.pool.Exec(ctx, `INSERT INTO imap_folders(mailbox_id,name) VALUES($1,$2) ON CONFLICT DO NOTHING`, p.MailboxID, folder); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO imap_folders(mailbox_id,name) VALUES($1,$2) ON CONFLICT DO NOTHING`, p.MailboxID, folder); err != nil {
 		return nil, err
 	}
 
-	m, err := scanMessage(s.pool.QueryRow(ctx, `
+	m, err := scanMessage(tx.QueryRow(ctx, `
 		INSERT INTO messages (mailbox_id, envelope_from, envelope_to, message_id,
 			from_addr, from_name, subject, sent_at, text_body, html_body, raw, size_bytes, folder)
 		VALUES ($1, $2, $3, nullif($4, ''), nullif($5, ''), nullif($6, ''), $7, $8,
@@ -159,6 +167,16 @@ func (s *Store) Deliver(ctx context.Context, p DeliverParams) (*Message, error) 
 			return nil, ErrDuplicate
 		}
 		return nil, fmt.Errorf("insert message: %w", err)
+	}
+	if err = s.automate(ctx, tx, p, m); err != nil {
+		return nil, err
+	}
+	m, err = scanMessage(tx.QueryRow(ctx, `SELECT `+messageColumns+` FROM messages msg WHERE id=$1`, m.ID))
+	if err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, err
 	}
 	return m, nil
 }

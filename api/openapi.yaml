@@ -34,6 +34,43 @@ tags:
 security: []
 
 paths:
+  /workspaces/{slug}/mailboxes/{mailboxId}/automation:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { type: string } }
+      - { name: mailboxId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getMailAutomation
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: Mailbox rules and vacation response
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailAutomation' }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    put:
+      operationId: saveMailAutomation
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MailAutomation' }
+      responses:
+        '200':
+          description: Saved settings with incremented version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailAutomation' }
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /workspaces/{slug}/mailboxes/{mailboxId}/organization:
     parameters:
       - { name: slug, in: path, required: true, schema: { type: string } }
@@ -1922,6 +1959,39 @@ components:
         id: { type: string, format: uuid }
         name: { type: string }
         version: { type: integer }
+    MailAutomation:
+      type: object
+      required: [version, rules, vacation]
+      properties:
+        pending_replies: { type: integer, readOnly: true }
+        failed_replies: { type: integer, readOnly: true }
+        version: { type: integer, minimum: 0 }
+        rules:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/MailRule' }
+        vacation: { $ref: '#/components/schemas/MailVacation' }
+    MailRule:
+      type: object
+      required: [name, enabled, from, subject, mark_read, stop]
+      properties:
+        name: { type: string, maxLength: 80 }
+        enabled: { type: boolean }
+        from: { type: string }
+        subject: { type: string }
+        folder_uidvalidity: { type: integer, format: int64 }
+        label_id: { type: string, format: uuid }
+        mark_read: { type: boolean }
+        stop: { type: boolean }
+    MailVacation:
+      type: object
+      required: [enabled, subject, text]
+      properties:
+        enabled: { type: boolean }
+        subject: { type: string }
+        text: { type: string }
+        start: { type: string, format: date-time }
+        end: { type: string, format: date-time }
     MailOrganization:
       type: object
       required: [folders, labels]

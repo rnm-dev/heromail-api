@@ -338,3 +338,18 @@ func TestSendPreservesReplyThreadHeaders(t *testing.T) {
 		t.Fatal("reply headers changed on SMTP wire")
 	}
 }
+
+func TestAutomaticReplyNullReversePath(t *testing.T) {
+	s, fake := newTestSender(t)
+	_, err := s.Send(t.Context(), provider.Message{From: "me@example.test", To: []string{"you@example.test"}, Subject: "Away", TextBody: "Back soon", NullReversePath: true, Headers: map[string]string{"Auto-Submitted": "auto-replied", "X-Auto-Response-Suppress": "All"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := fake.received()
+	if len(got) != 1 || got[0].from != "" {
+		t.Fatalf("automatic reply must use empty SMTP reverse path: %#v", got)
+	}
+	if !strings.Contains(got[0].data, "Auto-Submitted: auto-replied") || !strings.Contains(got[0].data, "me@example.test") {
+		t.Fatal("missing automatic reply header or visible From")
+	}
+}

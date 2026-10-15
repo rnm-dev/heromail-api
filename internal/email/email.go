@@ -39,6 +39,7 @@ const (
 
 // Email is one outbound message, and the unit of idempotency.
 type Email struct {
+	AutoReply      bool     `json:"-"`
 	ID             string   `json:"id"`
 	WorkspaceID    string   `json:"workspace_id"`
 	FromAddr       string   `json:"from"`

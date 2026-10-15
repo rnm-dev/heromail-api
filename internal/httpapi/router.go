@@ -60,6 +60,9 @@ func Router(server *Server, apiKeys *auth.Authenticator, accounts *account.Servi
 
 	root := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
+		if strings.HasSuffix(path, "/automation") {
+			r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
+		}
 		if strings.HasPrefix(path, "/contacts/") {
 			r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
 		}
