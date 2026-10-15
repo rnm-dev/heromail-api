@@ -60,7 +60,7 @@ func Router(server *Server, apiKeys *auth.Authenticator, accounts *account.Servi
 
 	root := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		if strings.Contains(path, "/drafts/") {
+		if strings.Contains(path, "/drafts/") || strings.HasSuffix(path, "/mail-signatures") {
 			r.Body = http.MaxBytesReader(w, r.Body, 2*1024*1024)
 		}
 		switch {

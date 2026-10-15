@@ -34,6 +34,46 @@ tags:
 security: []
 
 paths:
+  /workspaces/{slug}/mail-signatures:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: listMailSignatures
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: Own signatures for currently accessible senders
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [signatures]
+                properties:
+                  signatures: { type: array, items: { $ref: '#/components/schemas/MailSignature' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: saveMailSignature
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MailSignature' }
+      responses:
+        '200':
+          description: Saved; empty text disables the signature without resetting version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailSignature' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Signature changed on another device
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /messages/drafts:
     get:
       operationId: listDrafts
@@ -1660,6 +1700,13 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    MailSignature:
+      type: object
+      required: [sender, text, version]
+      properties:
+        sender: { type: string, format: email }
+        text: { type: string, maxLength: 10000 }
+        version: { type: integer, minimum: 0 }
     MailDraft:
       type: object
       required: [id, workspace, version, data, updated_at]

@@ -27,7 +27,7 @@ func TestComposePipeline(t *testing.T) {
 	if _, err := h.pool.Exec(t.Context(), `INSERT INTO workspace_members(workspace_id,user_id,role) VALUES($1,$2,'member')`, ws, memberID); err != nil {
 		t.Fatal(err)
 	}
-	body := fmt.Sprintf(`{"from":"hello@%s","to":["to@example.test"],"cc":["copy@example.test"],"bcc":["secret@example.test"],"text":"Hello from UI"}`, domain)
+	body := fmt.Sprintf(`{"from":"hello@%s","to":["to@example.test"],"cc":["copy@example.test"],"bcc":["secret@example.test"],"text":"Hello from UI","html":"<p><b>Hello</b> from UI</p>"}`, domain)
 	for _, token := range []string{"", h.apiKeyFor(ws)} {
 		if r := h.do("POST", path+"/emails", body, token); r.Code != 401 {
 			t.Fatalf("credential boundary: %d %s", r.Code, r.Body)
@@ -63,6 +63,9 @@ func TestComposePipeline(t *testing.T) {
 	h.runWorker(sent.ID)
 	h.runWorker(sent.ID)
 	message, ok := h.mail.last()
+	if message.HTMLBody != "<p><b>Hello</b> from UI</p>" || message.TextBody != "Hello from UI" {
+		t.Fatalf("multipart alternatives lost: %+v", message)
+	}
 	if !ok || h.mail.count() != 1 || len(message.Cc) != 1 || len(message.Bcc) != 1 {
 		t.Fatalf("copies/deduplication: %+v count=%d", message, h.mail.count())
 	}

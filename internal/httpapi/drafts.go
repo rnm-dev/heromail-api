@@ -76,8 +76,8 @@ func (s *Server) validateDraft(ctx context.Context, tx pgx.Tx, ws, user string, 
 	if len(encoded) > 1024*1024 {
 		return fmt.Errorf("draft exceeds 1 MiB")
 	}
-	stringsAllowed := map[string]bool{"workspace": true, "from": true, "to": true, "cc": true, "bcc": true, "subject": true, "body": true, "replyToMessageId": true, "forwardMessageId": true}
-	bools := map[string]bool{"mailing": true, "replyAll": true, "includeOriginal": true}
+	stringsAllowed := map[string]bool{"workspace": true, "from": true, "to": true, "cc": true, "bcc": true, "subject": true, "body": true, "bodyHtml": true, "replyToMessageId": true, "forwardMessageId": true}
+	bools := map[string]bool{"mailing": true, "richText": true, "replyAll": true, "includeOriginal": true}
 	for key, value := range data {
 		if stringsAllowed[key] {
 			if _, ok := value.(string); !ok {

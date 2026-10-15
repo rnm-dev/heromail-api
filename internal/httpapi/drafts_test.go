@@ -40,12 +40,15 @@ func TestDraftsOwnershipVersionsAndRecovery(t *testing.T) {
 	if r := h.do("GET", "/messages/drafts", "", h.apiKeyFor(ws)); r.Code != 401 {
 		t.Fatalf("API key: %d", r.Code)
 	}
-	a := save(0, `{"body":"first","subject":"Private"}`, token, 200)
+	a := save(0, `{"body":"first","subject":"Private","richText":true,"bodyHtml":"<b>first</b>"}`, token, 200)
+	if a.Data["bodyHtml"] != "<b>first</b>" || a.Data["richText"] != true {
+		t.Fatal("formatted draft lost")
+	}
 	if a.Version != 1 {
 		t.Fatal(a.Version)
 	}
 	// Lost response: identical old-version write is idempotent.
-	if b := save(0, `{"body":"first","subject":"Private"}`, token, 200); b.Version != 1 {
+	if b := save(0, `{"body":"first","subject":"Private","richText":true,"bodyHtml":"<b>first</b>"}`, token, 200); b.Version != 1 {
 		t.Fatal(b.Version)
 	}
 	save(0, `{"body":"stale"}`, token, 409)
