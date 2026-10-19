@@ -1997,6 +1997,7 @@ components:
         id: { type: string, format: uuid }
         name: { type: string }
         version: { type: integer }
+        unread: { type: integer, description: Unread labelled messages outside Junk and Trash; organization listing only. }
     MailAutomation:
       type: object
       required: [version, rules, vacation]

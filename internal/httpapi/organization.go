@@ -77,16 +77,20 @@ func (s *Server) GetMailOrganization(ctx context.Context, r GetMailOrganizationR
 	if err != nil {
 		return nil, err
 	}
-	rows, err = s.pool.Query(ctx, `SELECT id,name,version FROM mail_labels WHERE mailbox_id=$1 ORDER BY name,id`, r.MailboxId)
+	rows, err = s.pool.Query(ctx, `SELECT l.id,l.name,l.version,(SELECT count(*) FROM message_labels ml JOIN messages m ON m.id=ml.message_id
+ WHERE ml.label_id=l.id AND m.read_at IS NULL AND m.folder NOT IN ('Junk','Trash'))::int
+ FROM mail_labels l WHERE l.mailbox_id=$1 ORDER BY l.name,l.id`, r.MailboxId)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var label MailLabel
-		if err = rows.Scan(&label.Id, &label.Name, &label.Version); err != nil {
+		var unread int
+		if err = rows.Scan(&label.Id, &label.Name, &label.Version, &unread); err != nil {
 			return nil, err
 		}
+		label.Unread = &unread
 		out.Labels = append(out.Labels, label)
 	}
 	if err = rows.Err(); err != nil {
