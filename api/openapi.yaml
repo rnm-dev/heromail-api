@@ -1074,6 +1074,43 @@ paths:
                 additionalProperties: { type: integer }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /workspaces/{slug}/messages/{messageId}/category:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/Slug' } }
+      - { name: messageId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      operationId: setMessageCategory
+      summary: Correct a message's Inbox category, optionally for its whole sender
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category]
+              properties:
+                category: { $ref: '#/components/schemas/MessageCategory' }
+                remember_sender:
+                  type: boolean
+                  default: true
+                  description: Apply to the sender's existing and future messages in this mailbox.
+      responses:
+        '200':
+          description: Number of messages updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [updated]
+                properties:
+                  updated: { type: integer }
+        default:
+          description: Update failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /workspaces/{slug}/messages/{messageId}/flags:
     parameters:
       - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/Slug' } }
@@ -1383,6 +1420,7 @@ paths:
       security: [{ session: [] }]
       parameters:
         - { name: label, in: query, schema: { type: string, format: uuid } }
+        - { name: category, in: query, schema: { $ref: '#/components/schemas/MessageCategory' } }
         - name: unread
           in: query
           schema: { type: boolean, default: false }
@@ -1979,6 +2017,7 @@ components:
         enabled: { type: boolean }
         from: { type: string }
         subject: { type: string }
+        category: { $ref: '#/components/schemas/MessageCategory' }
         folder_uidvalidity: { type: integer, format: int64 }
         label_id: { type: string, format: uuid }
         mark_read: { type: boolean }
@@ -2456,9 +2495,13 @@ components:
           items: { $ref: '#/components/schemas/ReceivedSearchResult' }
         has_more: { type: boolean }
 
+    MessageCategory:
+      type: string
+      enum: [people, notifications, newsletters]
+      description: Smart inbox category; sorts the web Inbox into tabs.
     ReceivedMessage:
       type: object
-      required: [id, mailbox_id, subject, size_bytes, received_at, folder]
+      required: [id, mailbox_id, subject, size_bytes, received_at, folder, category]
       description: |
         `raw` is deliberately absent: the source of a message can be megabytes,
         and no view that lists subjects needs it.
@@ -2476,6 +2519,7 @@ components:
         calendar_preview: { $ref: '#/components/schemas/CalendarPreview' }
 
         folder: { type: string, description: Persistent IMAP folder name. }
+        category: { $ref: '#/components/schemas/MessageCategory' }
         id: { type: string, format: uuid }
         mailbox_id: { type: string, format: uuid }
         envelope_from: { type: string }

@@ -163,7 +163,14 @@ func (s *Server) ListMessages(ctx context.Context, request ListMessagesRequestOb
 	if request.Params.Label != nil {
 		label = request.Params.Label.String()
 	}
-	msgs, err := s.inbound.FilterMessages(ctx, box.ID, folder, search, limit, offset, unread, starred, label)
+	category := ""
+	if request.Params.Category != nil {
+		category = string(*request.Params.Category)
+		if !inbound.ValidCategory(category) {
+			return ListMessages404JSONResponse{NotFoundJSONResponse(errorBody("not_found", "unknown category"))}, nil
+		}
+	}
+	msgs, err := s.inbound.FilterMessages(ctx, box.ID, folder, search, limit, offset, unread, starred, label, category)
 
 	if err != nil {
 		log.Printf("list messages: %v", err)
@@ -246,6 +253,7 @@ func receivedMessageToAPI(m *inbound.Message) ReceivedMessage {
 	return ReceivedMessage{
 		Starred:      &m.Starred,
 		Folder:       m.Folder,
+		Category:     MessageCategory(m.Category),
 		Id:           mustUUID(m.ID),
 		MailboxId:    mustUUID(m.MailboxID),
 		EnvelopeFrom: &m.EnvelopeFrom,

@@ -105,7 +105,7 @@ func (s *Store) MailboxesForWorkspace(ctx context.Context, workspaceID string) (
 // column list usable everywhere instead of two that can drift apart.
 const messageColumns = ` msg.id, msg.mailbox_id, msg.envelope_from, msg.envelope_to, msg.message_id,
 	msg.from_addr, msg.from_name, msg.subject, msg.sent_at, msg.text_body, msg.html_body,
-	msg.size_bytes, msg.spf_pass, msg.dkim_pass, msg.read_at, msg.received_at, msg.folder, ('\Flagged'=ANY(msg.imap_flags))`
+	msg.size_bytes, msg.spf_pass, msg.dkim_pass, msg.read_at, msg.received_at, msg.folder, ('\Flagged'=ANY(msg.imap_flags)), msg.category`
 
 func scanMessage(row pgx.Row) (*Message, error) { return scanMessageExtra(row) }
 
@@ -113,7 +113,7 @@ func scanMessageExtra(row pgx.Row, extra ...any) (*Message, error) {
 	var m Message
 	args := []any{&m.ID, &m.MailboxID, &m.EnvelopeFrom, &m.EnvelopeTo, &m.MessageID,
 		&m.FromAddr, &m.FromName, &m.Subject, &m.SentAt, &m.TextBody, &m.HTMLBody,
-		&m.SizeBytes, &m.SPFPass, &m.DKIMPass, &m.ReadAt, &m.ReceivedAt, &m.Folder, &m.Starred}
+		&m.SizeBytes, &m.SPFPass, &m.DKIMPass, &m.ReadAt, &m.ReceivedAt, &m.Folder, &m.Starred, &m.Category}
 	err := row.Scan(append(args, extra...)...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNoMailbox
@@ -152,15 +152,21 @@ func (s *Store) Deliver(ctx context.Context, p DeliverParams) (*Message, error) 
 		return nil, err
 	}
 
+	category, reason, err := classify(ctx, tx, p.MailboxID, p.Raw, f.FromAddr, f.Subject)
+	if err != nil {
+		return nil, err
+	}
+
 	m, err := scanMessage(tx.QueryRow(ctx, `
 		INSERT INTO messages (mailbox_id, envelope_from, envelope_to, message_id,
-			from_addr, from_name, subject, sent_at, text_body, html_body, raw, size_bytes, folder)
+			from_addr, from_name, subject, sent_at, text_body, html_body, raw, size_bytes, folder,
+			category, category_reason)
 		VALUES ($1, $2, $3, nullif($4, ''), nullif($5, ''), nullif($6, ''), $7, $8,
-			nullif($9, ''), nullif($10, ''), $11, $12, $13)
+			nullif($9, ''), nullif($10, ''), $11, $12, $13, $14, $15)
 		RETURNING`+strings.ReplaceAll(messageColumns, "msg.", ""),
 		p.MailboxID, p.EnvelopeFrom, p.EnvelopeTo, f.MessageID,
 		f.FromAddr, f.FromName, f.Subject, f.SentAt, f.Text, f.HTML,
-		p.Raw, len(p.Raw), folder))
+		p.Raw, len(p.Raw), folder, category, reason))
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
@@ -204,10 +210,15 @@ func (s *Store) SearchFolderMessages(ctx context.Context, mailboxID, folder, que
 	return s.FilterMessages(ctx, mailboxID, folder, query, limit, skip, false, false)
 }
 
-func (s *Store) FilterMessages(ctx context.Context, mailboxID, folder, query string, limit, skip int, unread, starred bool, labels ...string) ([]Message, error) {
-	label := ""
-	if len(labels) > 0 {
-		label = labels[0]
+// FilterMessages lists one folder (or All). The optional extras are a label
+// UUID and an Inbox category; blank means no filter.
+func (s *Store) FilterMessages(ctx context.Context, mailboxID, folder, query string, limit, skip int, unread, starred bool, extras ...string) ([]Message, error) {
+	label, category := "", ""
+	if len(extras) > 0 {
+		label = extras[0]
+	}
+	if len(extras) > 1 {
+		category = extras[1]
 	}
 	rows, err := s.pool.Query(ctx, `
  SELECT`+messageColumns+`
@@ -215,9 +226,10 @@ func (s *Store) FilterMessages(ctx context.Context, mailboxID, folder, query str
  WHERE msg.mailbox_id=$1 AND ($4='All' OR msg.folder=$4)
  AND ($8='' OR EXISTS(SELECT 1 FROM message_labels ml WHERE ml.message_id=msg.id AND ml.label_id=nullif($8,'')::uuid))
  AND (NOT $6 OR msg.read_at IS NULL) AND (NOT $7 OR '\Flagged'=ANY(msg.imap_flags))
+ AND ($9='' OR msg.category=$9)
    AND strpos(lower(concat_ws(' ', msg.subject, msg.from_addr, msg.from_name, msg.text_body)), lower($5)) > 0
  ORDER BY msg.received_at DESC, msg.id DESC LIMIT $2 OFFSET $3`,
-		mailboxID, limit, skip, folder, query, unread, starred, label)
+		mailboxID, limit, skip, folder, query, unread, starred, label, category)
 	if err != nil {
 		return nil, err
 	}

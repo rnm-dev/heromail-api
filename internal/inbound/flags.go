@@ -14,7 +14,8 @@ func (s *Store) UpdateFlags(ctx context.Context, box, id string, read, starred *
 }
 
 func (s *Store) UnreadCounts(ctx context.Context, userID string) (map[string]int, error) {
-	rows, err := s.pool.Query(ctx, `SELECT msg.folder,count(*),count(*) FILTER (WHERE '\Flagged'=ANY(msg.imap_flags))
+	rows, err := s.pool.Query(ctx, `SELECT msg.folder,count(*),count(*) FILTER (WHERE '\Flagged'=ANY(msg.imap_flags)),
+ count(*) FILTER (WHERE msg.category='people'),count(*) FILTER (WHERE msg.category='notifications'),count(*) FILTER (WHERE msg.category='newsletters')
  FROM messages msg JOIN mailboxes m ON m.id=msg.mailbox_id JOIN domains d ON d.id=m.domain_id
  JOIN workspaces w ON w.id=coalesce(m.personal_workspace_id,d.workspace_id)
  JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=$1
@@ -24,15 +25,20 @@ func (s *Store) UnreadCounts(ctx context.Context, userID string) (map[string]int
 		return nil, err
 	}
 	defer rows.Close()
-	out := map[string]int{"INBOX": 0, "Junk": 0, "Archive": 0, "Trash": 0, "starred": 0}
+	// INBOX:<category> keys feed the Inbox tabs; INBOX stays the folder total.
+	out := map[string]int{"INBOX": 0, "Junk": 0, "Archive": 0, "Trash": 0, "starred": 0,
+		"INBOX:people": 0, "INBOX:notifications": 0, "INBOX:newsletters": 0}
 	for rows.Next() {
 		var folder string
-		var count, starred int
-		if err := rows.Scan(&folder, &count, &starred); err != nil {
+		var count, starred, people, notifications, newsletters int
+		if err := rows.Scan(&folder, &count, &starred, &people, &notifications, &newsletters); err != nil {
 			return nil, err
 		}
 		out[folder] = count
 		out["starred"] += starred
+		if folder == "INBOX" {
+			out["INBOX:people"], out["INBOX:notifications"], out["INBOX:newsletters"] = people, notifications, newsletters
+		}
 	}
 	return out, rows.Err()
 }

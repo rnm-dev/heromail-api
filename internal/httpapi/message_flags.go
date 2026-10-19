@@ -2,7 +2,10 @@ package httpapi
 
 import (
 	"context"
+	"errors"
+
 	"github.com/rnm/heromail/backend/internal/account"
+	"github.com/rnm/heromail/backend/internal/inbound"
 	"github.com/rnm/heromail/backend/internal/workspace"
 )
 
@@ -38,4 +41,32 @@ func (s *Server) GetUnreadCounts(ctx context.Context, _ GetUnreadCountsRequestOb
 		return nil, err
 	}
 	return GetUnreadCounts200JSONResponse(counts), nil
+}
+
+// SetMessageCategory is the user's correction of a smart inbox category. By
+// default it is remembered for the sender, so their next mail lands correctly.
+func (s *Server) SetMessageCategory(ctx context.Context, r SetMessageCategoryRequestObject) (SetMessageCategoryResponseObject, error) {
+	fail := func(code int, msg string) (SetMessageCategoryResponseObject, error) {
+		return SetMessageCategorydefaultJSONResponse{StatusCode: code, Body: errorBody("category_failed", msg)}, nil
+	}
+	if r.Body == nil || !inbound.ValidCategory(string(r.Body.Category)) {
+		return fail(400, "unknown category")
+	}
+	ws, _, err := s.scope(ctx, string(r.Slug), workspace.RoleMember)
+	if err != nil {
+		return fail(404, "message not found")
+	}
+	msg, err := s.readableMessage(ctx, ws, r.MessageId.String())
+	if err != nil {
+		return fail(404, "message not found")
+	}
+	remember := r.Body.RememberSender == nil || *r.Body.RememberSender
+	updated, err := s.inbound.SetSenderCategory(ctx, msg.MailboxID, msg.ID, string(r.Body.Category), remember)
+	if errors.Is(err, inbound.ErrNoMailbox) {
+		return fail(404, "message not found")
+	}
+	if err != nil {
+		return nil, err
+	}
+	return SetMessageCategory200JSONResponse{Updated: int(updated)}, nil
 }

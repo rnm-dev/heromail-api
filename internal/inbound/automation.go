@@ -25,6 +25,7 @@ type MailRule struct {
 	Enabled   bool    `json:"enabled"`
 	From      string  `json:"from"`
 	Subject   string  `json:"subject"`
+	Category  string  `json:"category,omitempty"`
 	FolderUID *int64  `json:"folder_uidvalidity,omitempty"`
 	LabelID   *string `json:"label_id,omitempty"`
 	MarkRead  bool    `json:"mark_read"`
@@ -98,8 +99,11 @@ func validateAutomation(a Automation) error {
 		if len(r.Subject) > 500 || strings.IndexFunc(r.Subject, unicode.IsControl) >= 0 {
 			return invalid("subject condition is too long or contains control characters")
 		}
-		if r.From == "" && strings.TrimSpace(r.Subject) == "" {
-			return invalid("specify sender or subject")
+		if r.Category != "" && !ValidCategory(r.Category) {
+			return invalid("unknown category")
+		}
+		if r.From == "" && strings.TrimSpace(r.Subject) == "" && r.Category == "" {
+			return invalid("specify sender, subject or category")
 		}
 		if r.FolderUID == nil && r.LabelID == nil && !r.MarkRead {
 			return invalid("choose an action")
@@ -203,7 +207,7 @@ func (s *Store) automate(ctx context.Context, tx pgx.Tx, p DeliverParams, m *Mes
 	}
 	subject = m.Subject
 	for _, r := range a.Rules {
-		if !r.Enabled || r.From != "" && !strings.EqualFold(r.From, from) || !strings.Contains(strings.ToLower(subject), strings.ToLower(r.Subject)) {
+		if !r.Enabled || r.From != "" && !strings.EqualFold(r.From, from) || !strings.Contains(strings.ToLower(subject), strings.ToLower(r.Subject)) || r.Category != "" && r.Category != m.Category {
 			continue
 		}
 		// Missing targets make this rule inert rather than losing incoming mail.

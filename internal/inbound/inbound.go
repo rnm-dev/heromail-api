@@ -44,6 +44,7 @@ type Mailbox struct {
 type Message struct {
 	Starred   bool   `json:"starred"`
 	Folder    string `json:"folder"`
+	Category  string `json:"category"`
 	ID        string `json:"id"`
 	MailboxID string `json:"mailbox_id"`
 
