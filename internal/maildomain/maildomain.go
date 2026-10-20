@@ -473,16 +473,17 @@ func (s *Service) AllowsAddress(ctx context.Context, workspaceID, address string
 	if at < 1 {
 		return ErrNotFound
 	}
-	// A private mailbox sends only as its owner or an employee granted access.
+	// A mailbox with an owner or assigned employees sends only as one of them;
+	// an unassigned shared mailbox is open to the whole workspace.
 	var privateOwner *string
 	var members []string
 	e := s.store.pool.QueryRow(ctx, `SELECT m.owner_user_id::text, ARRAY(SELECT mm.user_id::text FROM mailbox_members mm WHERE mm.mailbox_id=m.id) FROM mailboxes m JOIN domains d ON d.id=m.domain_id WHERE m.local_part=$1 AND d.domain=$2`, address[:at], address[at+1:]).Scan(&privateOwner, &members)
 	if e != nil && !errors.Is(e, pgx.ErrNoRows) {
 		return e
 	}
-	if privateOwner != nil {
+	if privateOwner != nil || len(members) > 0 {
 		user, ok := account.CurrentUser(ctx)
-		if !ok || (user.ID != *privateOwner && !slices.Contains(members, user.ID)) {
+		if !ok || ((privateOwner == nil || user.ID != *privateOwner) && !slices.Contains(members, user.ID)) {
 			return ErrNotFound
 		}
 	}

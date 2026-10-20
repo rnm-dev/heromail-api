@@ -1,6 +1,6 @@
--- Additional employees with access to a private mailbox. owner_user_id stays the
--- primary owner (IMAP and client SMTP sign in as that account); members read and
--- send through the web UI. Shared mailboxes (owner NULL) have no member rows.
+-- Employees assigned to a mailbox besides its owner. A mailbox with an owner or
+-- assigned employees is limited to them; an unassigned shared mailbox stays open
+-- to the whole workspace. Assigned employees read and send through the web UI.
 CREATE TABLE mailbox_members (
   mailbox_id uuid NOT NULL REFERENCES mailboxes(id) ON DELETE CASCADE,
   user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,

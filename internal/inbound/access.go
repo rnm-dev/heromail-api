@@ -15,7 +15,7 @@ func (s *Store) CanAccess(ctx context.Context, userID, mailboxID string) (bool, 
 	err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM mailboxes m JOIN domains d ON d.id=m.domain_id
  JOIN workspaces w ON w.id=coalesce(m.personal_workspace_id,d.workspace_id)
  JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=$1
- WHERE m.id=$2 AND (coalesce(m.owner_user_id,w.personal_owner_id) IS NULL OR coalesce(m.owner_user_id,w.personal_owner_id)=$1 OR EXISTS(SELECT 1 FROM mailbox_members mm WHERE mm.mailbox_id=m.id AND mm.user_id=$1)))`, userID, mailboxID).Scan(&allowed)
+ WHERE m.id=$2 AND ((coalesce(m.owner_user_id,w.personal_owner_id) IS NULL AND NOT EXISTS(SELECT 1 FROM mailbox_members mx WHERE mx.mailbox_id=m.id)) OR coalesce(m.owner_user_id,w.personal_owner_id)=$1 OR EXISTS(SELECT 1 FROM mailbox_members mm WHERE mm.mailbox_id=m.id AND mm.user_id=$1)))`, userID, mailboxID).Scan(&allowed)
 	return allowed, err
 }
 
@@ -32,15 +32,16 @@ func (s *Store) AssignOwner(ctx context.Context, workspaceID, mailboxID string, 
 	if result.RowsAffected() == 0 {
 		return errors.New("mailbox or workspace member not found")
 	}
-	// Sharing makes extra grants meaningless; a new owner needs no grant of their own.
+	// The owner needs no separate grant.
 	_, err = s.pool.Exec(ctx, `DELETE FROM mailbox_members mm USING mailboxes m
- WHERE mm.mailbox_id=m.id AND m.id=$1 AND (m.owner_user_id IS NULL OR mm.user_id=m.owner_user_id)`, mailboxID)
+ WHERE mm.mailbox_id=m.id AND m.id=$1 AND mm.user_id=m.owner_user_id`, mailboxID)
 	return err
 }
 
-// SetMembers replaces the employees who, besides the owner, may read and send
-// from a private mailbox. Each must belong to the mailbox's workspace; shared
-// mailboxes and personal workspaces take no grants.
+// SetMembers replaces the employees assigned to a mailbox besides its owner.
+// Assigned employees read and send from it; once a shared mailbox has any, it
+// is no longer open to the rest of the workspace. Each must be a workspace
+// member; personal workspaces take no grants.
 func (s *Store) SetMembers(ctx context.Context, workspaceID, mailboxID string, userIDs []string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -57,12 +58,9 @@ func (s *Store) SetMembers(ctx context.Context, workspaceID, mailboxID string, u
 	if err != nil {
 		return err
 	}
-	if owner == nil {
-		return errors.New("assign an owner first: shared mailboxes are open to every member")
-	}
 	ids := make([]string, 0, len(userIDs))
 	for _, id := range userIDs {
-		if id != *owner && !slices.Contains(ids, id) {
+		if (owner == nil || id != *owner) && !slices.Contains(ids, id) {
 			ids = append(ids, id)
 		}
 	}
@@ -85,6 +83,6 @@ func (s *Store) SetMembers(ctx context.Context, workspaceID, mailboxID string, u
 // CanReadOutbound also protects status/detail responses containing the body.
 func (s *Store) CanReadOutbound(ctx context.Context, userID, emailID string) (bool, error) {
 	var allowed bool
-	err := s.pool.QueryRow(ctx, `SELECT (e.retained_owner_id IS NULL OR e.retained_owner_id::text=$1) AND NOT EXISTS(SELECT 1 FROM mailboxes m JOIN domains d ON d.id=m.domain_id WHERE coalesce(m.personal_workspace_id,d.workspace_id)=e.workspace_id AND lower(m.local_part || '@' || d.domain)=lower(e.from_addr) AND m.owner_user_id IS NOT NULL AND m.owner_user_id::text<>$1 AND NOT EXISTS(SELECT 1 FROM mailbox_members mm WHERE mm.mailbox_id=m.id AND mm.user_id::text=$1)) FROM emails e WHERE e.id=$2`, userID, emailID).Scan(&allowed)
+	err := s.pool.QueryRow(ctx, `SELECT (e.retained_owner_id IS NULL OR e.retained_owner_id::text=$1) AND NOT EXISTS(SELECT 1 FROM mailboxes m JOIN domains d ON d.id=m.domain_id WHERE coalesce(m.personal_workspace_id,d.workspace_id)=e.workspace_id AND lower(m.local_part || '@' || d.domain)=lower(e.from_addr) AND (m.owner_user_id IS NOT NULL OR EXISTS(SELECT 1 FROM mailbox_members mx WHERE mx.mailbox_id=m.id)) AND m.owner_user_id IS DISTINCT FROM $1::uuid AND NOT EXISTS(SELECT 1 FROM mailbox_members mm WHERE mm.mailbox_id=m.id AND mm.user_id::text=$1)) FROM emails e WHERE e.id=$2`, userID, emailID).Scan(&allowed)
 	return allowed, err
 }

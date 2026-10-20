@@ -89,16 +89,26 @@ func TestMailboxMembersAccess(t *testing.T) {
 		t.Fatal("grant survived leaving the workspace")
 	}
 
-	// Sharing the mailbox clears grants; shared mailboxes refuse new ones.
-	h.do("PUT", members, fmt.Sprintf(`{"user_ids":[%q]}`, otherID), owner)
+	// A shared mailbox with assigned employees is limited to them; without
+	// assignments it is open to the whole workspace again.
 	if r = h.do("PUT", path+"/mailboxes/"+box.Id.String()+"/owner", `{"owner_user_id":null}`, owner); r.Code != 200 {
 		t.Fatalf("share: %d %s", r.Code, r.Body)
 	}
-	h.pool.QueryRow(ctx, `SELECT count(*) FROM mailbox_members WHERE mailbox_id=$1`, box.Id).Scan(&left)
-	if left != 0 {
-		t.Fatal("grants survived sharing")
+	if r = h.do("PUT", members, fmt.Sprintf(`{"user_ids":[%q]}`, otherID), owner); r.Code != 200 {
+		t.Fatalf("assign to shared: %d %s", r.Code, r.Body)
 	}
-	if r = h.do("PUT", members, fmt.Sprintf(`{"user_ids":[%q]}`, otherID), owner); r.Code != 400 {
-		t.Fatalf("shared mailbox accepted members: %d", r.Code)
+	if read(other) != 200 || send(other) != 202 {
+		t.Fatal("assigned employee cannot use the shared mailbox")
+	}
+	for _, token := range []string{owner, employee} {
+		if read(token) != 404 || send(token) != 400 {
+			t.Fatal("unassigned member reached a restricted shared mailbox")
+		}
+	}
+	if r = h.do("PUT", members, `{"user_ids":[]}`, owner); r.Code != 200 {
+		t.Fatalf("clear: %d %s", r.Code, r.Body)
+	}
+	if read(employee) != 200 || read(owner) != 200 {
+		t.Fatal("unassigned shared mailbox is not open to the workspace")
 	}
 }

@@ -239,7 +239,8 @@ func (s *Store) visibleForUser(ctx context.Context, userID, query string, limit,
 		)
 		AND (e.retained_owner_id IS NULL OR e.retained_owner_id=$1)
 		AND NOT EXISTS (SELECT 1 FROM mailboxes mb JOIN domains d ON d.id=mb.domain_id
-            WHERE lower(mb.local_part || '@' || d.domain)=lower(e.from_addr) AND mb.owner_user_id IS NOT NULL AND mb.owner_user_id<>$1
+            WHERE lower(mb.local_part || '@' || d.domain)=lower(e.from_addr) AND (mb.owner_user_id IS NOT NULL OR EXISTS(SELECT 1 FROM mailbox_members mx WHERE mx.mailbox_id=mb.id))
+              AND mb.owner_user_id IS DISTINCT FROM $1
               AND NOT EXISTS(SELECT 1 FROM mailbox_members mm WHERE mm.mailbox_id=mb.id AND mm.user_id=$1))
         AND strpos(lower(concat_ws(' ', e.from_addr, array_to_string(e.to_addrs, ' '),
 			e.subject, e.text_body, e.html_body)), lower($2)) > 0
