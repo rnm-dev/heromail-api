@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"testing"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/bcrypt"
@@ -16,7 +17,17 @@ import (
 // bcryptCost is the work factor. The default (10) is the usual starting point;
 // raise it as hardware improves — existing hashes keep their own cost, so a
 // change only affects passwords set afterwards.
-const bcryptCost = bcrypt.DefaultCost
+//
+// Test binaries use the minimum cost: hashing dominates API test time, and
+// verification reads the cost from each stored hash, so nothing else changes.
+var BcryptCost = bcryptCostFor(testing.Testing())
+
+func bcryptCostFor(test bool) int {
+	if test {
+		return bcrypt.MinCost
+	}
+	return bcrypt.DefaultCost
+}
 
 // Password rules. Length beats composition requirements: forcing a symbol
 // produces "Password1!" far more often than it produces entropy.
@@ -38,7 +49,7 @@ func hashPassword(plain string) ([]byte, error) {
 	if len(plain) > maxPasswordBytes {
 		return nil, fmt.Errorf("%w: must be at most %d bytes", ErrWeakPassword, maxPasswordBytes)
 	}
-	return bcrypt.GenerateFromPassword([]byte(plain), bcryptCost)
+	return bcrypt.GenerateFromPassword([]byte(plain), BcryptCost)
 }
 
 // verifyPassword reports whether plain matches the stored hash.
@@ -49,7 +60,7 @@ func verifyPassword(hash []byte, plain string) bool {
 // dummyHash is compared against when no user exists, so that a request for an
 // unknown address costs the same as one for a known address. Without it,
 // response time alone tells an attacker which emails are registered.
-var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("heromail-timing-equaliser"), bcryptCost)
+var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("heromail-timing-equaliser"), BcryptCost)
 
 func burnPasswordTime() { bcrypt.CompareHashAndPassword(dummyHash, []byte("x")) }
 

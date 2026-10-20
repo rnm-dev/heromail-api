@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"github.com/rnm/heromail/backend/internal/account"
 	"io"
 	"log"
 	"net"
@@ -57,7 +58,7 @@ type session struct {
 	applicationCredential                     bool
 }
 
-var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("submission-unknown-user"), bcrypt.DefaultCost)
+var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("submission-unknown-user"), account.BcryptCost)
 var authRequired = &smtp.SMTPError{Code: 530, EnhancedCode: smtp.EnhancedCode{5, 7, 0}, Message: "Authentication required"}
 
 func temporary() error {

@@ -35,7 +35,7 @@ func (s *Server) SetMailboxSMTPPassword(ctx context.Context, r SetMailboxSMTPPas
 	if err != nil || box.WorkspaceID != ws {
 		return fail(404, "mailbox not found")
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(pass), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(pass), account.BcryptCost)
 	if err != nil {
 		return nil, err
 	}

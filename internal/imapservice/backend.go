@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"github.com/rnm/heromail/backend/internal/account"
 	"io"
 	"net"
 	"strings"
@@ -46,7 +47,7 @@ func Server(b *Backend, addr, cert, key string) *server.Server {
 	return s
 }
 
-var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("imap-unknown-account"), bcrypt.DefaultCost)
+var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("imap-unknown-account"), account.BcryptCost)
 
 func (b *Backend) Login(info *imap.ConnInfo, address, password string) (backend.User, error) {
 	if info == nil || info.TLS == nil {
