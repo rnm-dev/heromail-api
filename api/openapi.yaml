@@ -1375,6 +1375,35 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /workspaces/{slug}/mailboxes/{mailboxId}/members:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/Slug' } }
+      - { name: mailboxId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      operationId: setMailboxMembers
+      summary: Replace the extra employees with access to a private mailbox (workspace owner only)
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_ids]
+              properties:
+                user_ids: { type: array, maxItems: 100, items: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Updated mailbox
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Mailbox' }
+        default:
+          description: Update failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /workspaces/{slug}/mailboxes/{mailboxId}/owner:
     parameters:
       - { name: slug, in: path, required: true, schema: { $ref: '#/components/schemas/Slug' } }
@@ -2451,6 +2480,10 @@ components:
       required: [id, address, created_at]
       properties:
         owner_user_id: { type: string, format: uuid, nullable: true }
+        member_user_ids:
+          type: array
+          description: Employees who, besides the owner, read and send from this private mailbox in the web UI.
+          items: { type: string, format: uuid }
         smtp_password_set: { type: boolean, description: Dedicated send-only password exists; no secret is returned. }
         can_read: { type: boolean }
         can_send: { type: boolean }

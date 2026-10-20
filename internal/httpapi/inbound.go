@@ -239,9 +239,14 @@ func mailboxToAPI(m *inbound.Mailbox) Mailbox {
 		id := mustUUID(*m.OwnerUserID)
 		owner = &id
 	}
+	members := make([]openapi_types.UUID, 0, len(m.MemberUserIDs))
+	for _, id := range m.MemberUserIDs {
+		members = append(members, mustUUID(id))
+	}
 	return Mailbox{
 		SmtpPasswordSet: &m.SMTPPasswordSet,
 		OwnerUserId:     owner,
+		MemberUserIds:   &members,
 		Id:              mustUUID(m.ID),
 		Address:         openapi_types.Email(m.Address),
 		Name:            m.Name,
@@ -317,6 +322,39 @@ func (s *Server) AssignMailboxOwner(ctx context.Context, r AssignMailboxOwnerReq
 		return nil, err
 	}
 	return AssignMailboxOwner200JSONResponse(mailboxToAPI(box)), nil
+}
+
+// SetMailboxMembers grants or revokes web access to a private mailbox for
+// employees besides its owner. Like reassignment, it exposes the whole history.
+func (s *Server) SetMailboxMembers(ctx context.Context, r SetMailboxMembersRequestObject) (SetMailboxMembersResponseObject, error) {
+	fail := func(code int, msg string) (SetMailboxMembersResponseObject, error) {
+		return SetMailboxMembersdefaultJSONResponse{StatusCode: code, Body: errorBody("members_failed", msg)}, nil
+	}
+	ws, forbidden, err := s.scope(ctx, r.Slug, workspace.RoleOwner)
+	if err != nil {
+		return fail(404, "workspace not found")
+	}
+	if forbidden {
+		return fail(403, "only the workspace owner can grant mailbox access")
+	}
+	if r.Body == nil {
+		return fail(400, "user_ids is required")
+	}
+	ids := make([]string, 0, len(r.Body.UserIds))
+	for _, id := range r.Body.UserIds {
+		ids = append(ids, id.String())
+	}
+	if len(ids) > 100 {
+		return fail(400, "too many users")
+	}
+	if err := s.inbound.SetMembers(ctx, ws, r.MailboxId.String(), ids); err != nil {
+		return fail(400, err.Error())
+	}
+	box, err := s.inbound.MailboxByID(ctx, r.MailboxId.String())
+	if err != nil {
+		return nil, err
+	}
+	return SetMailboxMembers200JSONResponse(mailboxToAPI(box)), nil
 }
 
 func (s *Server) MoveReceivedMessage(ctx context.Context, r MoveReceivedMessageRequestObject) (MoveReceivedMessageResponseObject, error) {

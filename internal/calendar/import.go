@@ -29,7 +29,7 @@ func (s *Store) Import(ctx context.Context, ws, user, token string) (Event, erro
 	}
 	var controls bool
 	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users u WHERE u.id=$1 AND u.email_verified_at IS NOT NULL AND lower(u.email)=$2)
-		OR EXISTS(SELECT 1 FROM mailboxes m JOIN domains d ON d.id=m.domain_id WHERE m.owner_user_id=$1 AND lower(m.local_part||'@'||d.domain)=$2)`, user, recipient).Scan(&controls)
+		OR EXISTS(SELECT 1 FROM mailboxes m JOIN domains d ON d.id=m.domain_id WHERE (m.owner_user_id=$1 OR EXISTS(SELECT 1 FROM mailbox_members mm WHERE mm.mailbox_id=m.id AND mm.user_id=$1)) AND lower(m.local_part||'@'||d.domain)=$2)`, user, recipient).Scan(&controls)
 	if err != nil {
 		return Event{}, err
 	}

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -472,14 +473,16 @@ func (s *Service) AllowsAddress(ctx context.Context, workspaceID, address string
 	if at < 1 {
 		return ErrNotFound
 	}
+	// A private mailbox sends only as its owner or an employee granted access.
 	var privateOwner *string
-	e := s.store.pool.QueryRow(ctx, `SELECT m.owner_user_id::text FROM mailboxes m JOIN domains d ON d.id=m.domain_id WHERE m.local_part=$1 AND d.domain=$2`, address[:at], address[at+1:]).Scan(&privateOwner)
+	var members []string
+	e := s.store.pool.QueryRow(ctx, `SELECT m.owner_user_id::text, ARRAY(SELECT mm.user_id::text FROM mailbox_members mm WHERE mm.mailbox_id=m.id) FROM mailboxes m JOIN domains d ON d.id=m.domain_id WHERE m.local_part=$1 AND d.domain=$2`, address[:at], address[at+1:]).Scan(&privateOwner, &members)
 	if e != nil && !errors.Is(e, pgx.ErrNoRows) {
 		return e
 	}
 	if privateOwner != nil {
 		user, ok := account.CurrentUser(ctx)
-		if !ok || user.ID != *privateOwner {
+		if !ok || (user.ID != *privateOwner && !slices.Contains(members, user.ID)) {
 			return ErrNotFound
 		}
 	}

@@ -27,6 +27,7 @@ var ErrDuplicate = errors.New("message already delivered")
 type Mailbox struct {
 	SMTPPasswordSet bool      `json:"smtp_password_set"`
 	OwnerUserID     *string   `json:"owner_user_id,omitempty"`
+	MemberUserIDs   []string  `json:"member_user_ids"`
 	ID              string    `json:"id"`
 	DomainID        string    `json:"domain_id"`
 	WorkspaceID     string    `json:"workspace_id"`

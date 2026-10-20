@@ -157,7 +157,7 @@ func (d *Dispatcher) process(ctx context.Context, j job) error {
 		JOIN workspaces w ON w.id=coalesce(m.personal_workspace_id,dom.workspace_id)
 		JOIN calendar_events ev ON ev.id=$3 JOIN calendars c ON c.id=ev.calendar_id
 		WHERE w.id=$1 AND lower(m.local_part||'@'||dom.domain)=lower($2)
-		AND dom.verified_at IS NOT NULL AND (coalesce(m.owner_user_id,w.personal_owner_id) IS NULL OR coalesce(m.owner_user_id,w.personal_owner_id)=c.user_id))`, ws, e.Organizer, e.ID).Scan(&allowed)
+		AND dom.verified_at IS NOT NULL AND (coalesce(m.owner_user_id,w.personal_owner_id) IS NULL OR coalesce(m.owner_user_id,w.personal_owner_id)=c.user_id OR EXISTS(SELECT 1 FROM mailbox_members mm WHERE mm.mailbox_id=m.id AND mm.user_id=c.user_id)))`, ws, e.Organizer, e.ID).Scan(&allowed)
 	if err != nil {
 		return err
 	}

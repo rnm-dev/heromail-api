@@ -35,7 +35,7 @@ func (s *Store) SearchReceived(ctx context.Context, user string, f SearchFilter)
  FROM messages msg JOIN mailboxes m ON m.id=msg.mailbox_id JOIN domains d ON d.id=m.domain_id
  JOIN workspaces w ON w.id=coalesce(m.personal_workspace_id,d.workspace_id)
  JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=$1
- WHERE (coalesce(m.owner_user_id,w.personal_owner_id) IS NULL OR coalesce(m.owner_user_id,w.personal_owner_id)=$1)
+ WHERE (coalesce(m.owner_user_id,w.personal_owner_id) IS NULL OR coalesce(m.owner_user_id,w.personal_owner_id)=$1 OR EXISTS(SELECT 1 FROM mailbox_members mm WHERE mm.mailbox_id=m.id AND mm.user_id=$1))
  AND ($2='' OR m.id::text=$2) AND ($3='All' OR msg.folder=$3)
  AND ($4='' OR strpos(lower(concat_ws(' ',msg.subject,msg.from_addr,msg.from_name,msg.envelope_from,msg.text_body)),lower($4))>0)
  AND ($5='' OR strpos(lower(concat_ws(' ',msg.from_addr,msg.from_name,msg.envelope_from)),lower($5))>0)
