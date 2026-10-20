@@ -35,12 +35,17 @@ func (s *Server) ListMailboxes(ctx context.Context, request ListMailboxesRequest
 	if err != nil {
 		return nil, err
 	}
+	ids := make([]string, len(boxes))
+	for i := range boxes {
+		ids[i] = boxes[i].ID
+	}
+	readable, err := s.inbound.AccessibleMailboxes(ctx, user.ID, ids)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]Mailbox, 0, len(boxes))
 	for i := range boxes {
-		canRead, err := s.inbound.CanAccess(ctx, user.ID, boxes[i].ID)
-		if err != nil {
-			return nil, err
-		}
+		canRead := readable[boxes[i].ID]
 		if !canRead && !role.AtLeast(workspace.RoleAdmin) {
 			continue
 		}

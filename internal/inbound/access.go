@@ -11,12 +11,29 @@ import (
 // CanAccess is shared by the HTTP and IMAP adapters. Workspace management does
 // not imply permission to read a private employee's correspondence.
 func (s *Store) CanAccess(ctx context.Context, userID, mailboxID string) (bool, error) {
-	var allowed bool
-	err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM mailboxes m JOIN domains d ON d.id=m.domain_id
+	allowed, err := s.AccessibleMailboxes(ctx, userID, []string{mailboxID})
+	return allowed[mailboxID], err
+}
+
+// AccessibleMailboxes reports, in one query, which of the given mailboxes the
+// user may use under the CanAccess rules.
+func (s *Store) AccessibleMailboxes(ctx context.Context, userID string, mailboxIDs []string) (map[string]bool, error) {
+	rows, err := s.pool.Query(ctx, `SELECT m.id FROM mailboxes m JOIN domains d ON d.id=m.domain_id
  JOIN workspaces w ON w.id=coalesce(m.personal_workspace_id,d.workspace_id)
  JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=$1
- WHERE m.id=$2 AND ((coalesce(m.owner_user_id,w.personal_owner_id) IS NULL AND NOT EXISTS(SELECT 1 FROM mailbox_members mx WHERE mx.mailbox_id=m.id)) OR coalesce(m.owner_user_id,w.personal_owner_id)=$1 OR EXISTS(SELECT 1 FROM mailbox_members mm WHERE mm.mailbox_id=m.id AND mm.user_id=$1)))`, userID, mailboxID).Scan(&allowed)
-	return allowed, err
+ WHERE m.id=ANY($2::uuid[]) AND ((coalesce(m.owner_user_id,w.personal_owner_id) IS NULL AND NOT EXISTS(SELECT 1 FROM mailbox_members mx WHERE mx.mailbox_id=m.id)) OR coalesce(m.owner_user_id,w.personal_owner_id)=$1 OR EXISTS(SELECT 1 FROM mailbox_members mm WHERE mm.mailbox_id=m.id AND mm.user_id=$1))`, userID, mailboxIDs)
+	if err != nil {
+		return nil, err
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
+	allowed := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		allowed[id] = true
+	}
+	return allowed, nil
 }
 
 func (s *Store) AssignOwner(ctx context.Context, workspaceID, mailboxID string, owner *string) error {

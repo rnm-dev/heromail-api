@@ -24,13 +24,17 @@ func (s *Server) ListMailSignatures(ctx context.Context, r ListMailSignaturesReq
 	if err != nil {
 		return nil, err
 	}
+	ids := make([]string, len(boxes))
+	for i, box := range boxes {
+		ids[i] = box.ID
+	}
+	readable, err := s.inbound.AccessibleMailboxes(ctx, user.ID, ids)
+	if err != nil {
+		return nil, err
+	}
 	allowed := []string{}
 	for _, box := range boxes {
-		canAccess, err := s.inbound.CanAccess(ctx, user.ID, box.ID)
-		if err != nil {
-			return nil, err
-		}
-		if canAccess {
+		if readable[box.ID] {
 			allowed = append(allowed, strings.ToLower(box.Address))
 		}
 	}
