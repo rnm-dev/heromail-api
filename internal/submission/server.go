@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"github.com/rnm/heromail/backend/internal/account"
 	"io"
 	"log"
 	"net"
@@ -19,8 +18,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rnm/heromail/backend/internal/inbound"
+	"github.com/rnm/heromail/backend/internal/mailauth"
 	"github.com/rnm/heromail/backend/internal/ratelimit"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type Relay func(context.Context, string, []string, []byte) error
@@ -51,14 +50,13 @@ func Server(b *Backend, addr, cert, key string) *smtp.Server {
 func (b *Backend) NewSession(c *smtp.Conn) (smtp.Session, error) { return &session{b: b, c: c}, nil }
 
 type session struct {
-	b                                         *Backend
-	c                                         *smtp.Conn
-	user, box, workspace, address, hash, from string
-	recipients                                []string
-	applicationCredential                     bool
+	b             *Backend
+	c             *smtp.Conn
+	principal     mailauth.Principal
+	address, from string
+	recipients    []string
 }
 
-var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("submission-unknown-user"), account.BcryptCost)
 var authRequired = &smtp.SMTPError{Code: 530, EnhancedCode: smtp.EnhancedCode{5, 7, 0}, Message: "Authentication required"}
 
 func temporary() error {
@@ -67,20 +65,6 @@ func temporary() error {
 func denied() error {
 	return &smtp.SMTPError{Code: 553, EnhancedCode: smtp.EnhancedCode{5, 7, 1}, Message: "Sender must match authenticated mailbox"}
 }
-
-const identityQuery = `SELECT wm.user_id,m.id,w.id,i.password_hash FROM mailboxes m JOIN domains d ON d.id=m.domain_id
- JOIN workspaces w ON w.id=coalesce(m.personal_workspace_id,d.workspace_id)
- JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=coalesce(m.owner_user_id,w.personal_owner_id)
- JOIN users u ON u.id=wm.user_id JOIN identities i ON i.user_id=u.id AND i.provider='password'
- WHERE lower(m.local_part||'@'||d.domain)=$1 AND d.verified_at IS NOT NULL AND NOT u.must_change_password`
-
-// A mailbox password delegates sending only. Its issuer must still administer the
-// workspace; assignment and membership changes revoke the stored credential.
-const mailboxCredentialQuery = `SELECT c.issued_by,m.id,w.id,c.password_hash
- FROM mailbox_smtp_credentials c JOIN mailboxes m ON m.id=c.mailbox_id
- JOIN domains d ON d.id=m.domain_id JOIN workspaces w ON w.id=coalesce(m.personal_workspace_id,d.workspace_id)
- JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=c.issued_by AND wm.role IN ('owner','admin')
- WHERE lower(m.local_part||'@'||d.domain)=$1 AND d.verified_at IS NOT NULL`
 
 func (s *session) AuthMechanisms() []string { return []string{sasl.Plain} }
 func (s *session) Auth(mech string) (sasl.Server, error) {
@@ -97,55 +81,25 @@ func (s *session) Auth(mech string) (sasl.Server, error) {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if s.b.Limiter != nil {
-			host, _, _ := net.SplitHostPort(s.c.Conn().RemoteAddr().String())
-			if !s.b.Limiter.AllowStrict(ctx, ratelimit.Rule{Name: "submission:login:ip", Limit: 30, Window: time.Minute}, host).Allowed || !s.b.Limiter.AllowStrict(ctx, ratelimit.Rule{Name: "submission:login:address", Limit: 30, Window: 15 * time.Minute}, address).Allowed {
-				return smtp.ErrAuthFailed
-			}
-		}
-		var user, box, ws, hash string
-		authenticated := false
-		application := false
-		for _, candidate := range []struct {
-			query       string
-			application bool
-		}{{mailboxCredentialQuery, true}, {identityQuery, false}} {
-			err := s.b.Pool.QueryRow(ctx, candidate.query, address).Scan(&user, &box, &ws, &hash)
-			if err != nil {
-				bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
-				continue
-			}
-			if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil {
-				authenticated = true
-				application = candidate.application
-				break
-			}
-		}
-		if !authenticated {
+		host, _, _ := net.SplitHostPort(s.c.Conn().RemoteAddr().String())
+		if !mailauth.Allow(ctx, s.b.Limiter, "submission", host, address) {
 			return smtp.ErrAuthFailed
 		}
-		s.applicationCredential = application
-		s.user = user
-		s.box = box
-		s.workspace = ws
-		s.hash = hash
+		p, ok := mailauth.Login(ctx, s.b.Pool, address, password, mailauth.Application, mailauth.Account)
+		if !ok {
+			return smtp.ErrAuthFailed
+		}
+		s.principal = p
 		s.address = address
 		return nil
 	}), nil
 }
 func (s *session) check(ctx context.Context) error {
-	if s.user == "" {
+	if s.principal.UserID == "" {
 		return authRequired
 	}
-	var user, box, ws, hash string
-	query := identityQuery
-	if s.applicationCredential {
-		query = mailboxCredentialQuery
-	}
-	if err := s.b.Pool.QueryRow(ctx, query, s.address).Scan(&user, &box, &ws, &hash); err != nil {
-		return smtp.ErrAuthFailed
-	}
-	if user != s.user || box != s.box || ws != s.workspace || hash != s.hash {
+	// Re-resolve so removal, reassignment and password changes end the session.
+	if current, err := mailauth.Lookup(ctx, s.b.Pool, s.address, s.principal.Kind); err != nil || current != s.principal {
 		return smtp.ErrAuthFailed
 	}
 	return nil
@@ -164,7 +118,7 @@ func (s *session) Mail(from string, _ *smtp.MailOptions) error {
 	return nil
 }
 func (s *session) Rcpt(to string, _ *smtp.RcptOptions) error {
-	if s.user == "" || s.from == "" {
+	if s.principal.UserID == "" || s.from == "" {
 		return authRequired
 	}
 	a, err := mail.ParseAddress(to)
@@ -203,12 +157,12 @@ func (s *session) Data(r io.Reader) error {
 			day = 5000
 		}
 		for _, rule := range []ratelimit.Rule{{Name: "send:minute", Limit: minute, Window: time.Minute}, {Name: "send:day", Limit: day, Window: 24 * time.Hour}} {
-			if !s.b.Limiter.AllowStrict(ctx, rule, s.workspace).Allowed {
+			if !s.b.Limiter.AllowStrict(ctx, rule, s.principal.WorkspaceID).Allowed {
 				return &smtp.SMTPError{Code: 451, Message: "Submission quota exceeded; retry later"}
 			}
 		}
 	}
-	raw, err = s.b.Sign(ctx, s.workspace, strings.SplitN(s.address, "@", 2)[1], raw)
+	raw, err = s.b.Sign(ctx, s.principal.WorkspaceID, strings.SplitN(s.address, "@", 2)[1], raw)
 	if err != nil {
 		log.Printf("submission signing: %v", err)
 		return temporary()
@@ -225,7 +179,7 @@ func (s *session) Data(r io.Reader) error {
 		}
 		return temporary()
 	}
-	log.Printf("submission accepted mailbox=%s recipients=%d bytes=%d", s.box, len(s.recipients), len(raw))
+	log.Printf("submission accepted mailbox=%s recipients=%d bytes=%d", s.principal.MailboxID, len(s.recipients), len(raw))
 	return nil
 }
 func (s *session) Reset()        { s.from = ""; s.recipients = nil }

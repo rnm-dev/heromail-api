@@ -15,8 +15,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/emersion/go-imap"
 	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
+	"github.com/rnm/heromail/backend/internal/imapservice"
 	"github.com/rnm/heromail/backend/internal/inbound"
 	"github.com/rnm/heromail/backend/internal/submission"
 	"golang.org/x/crypto/bcrypt"
@@ -71,6 +73,10 @@ func mailboxSMTPPasswordLifecycle(t *testing.T, role string) {
 	}
 	if hash == pass || bcrypt.CompareHashAndPassword([]byte(hash), []byte(pass)) != nil {
 		t.Fatal("password not hashed")
+	}
+	// Mailbox SMTP passwords are send-only: they must never open the mailbox over IMAP.
+	if _, err := imapservice.New(h.pool, nil).Login(&imap.ConnInfo{TLS: &tls.ConnectionState{}}, box.Address, pass); err == nil {
+		t.Fatal("SMTP password opened IMAP")
 	}
 	listing := h.do("GET", "/workspaces/"+h.slugFor(ws)+"/mailboxes", "", owner)
 	if strings.Contains(listing.Body.String(), pass) || strings.Contains(listing.Body.String(), hash) {

@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"github.com/rnm/heromail/backend/internal/account"
 	"io"
 	"net"
 	"strings"
@@ -16,8 +15,8 @@ import (
 	"github.com/emersion/go-imap/server"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rnm/heromail/backend/internal/inbound"
+	"github.com/rnm/heromail/backend/internal/mailauth"
 	"github.com/rnm/heromail/backend/internal/ratelimit"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type Backend struct {
@@ -47,8 +46,6 @@ func Server(b *Backend, addr, cert, key string) *server.Server {
 	return s
 }
 
-var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("imap-unknown-account"), account.BcryptCost)
-
 func (b *Backend) Login(info *imap.ConnInfo, address, password string) (backend.User, error) {
 	if info == nil || info.TLS == nil {
 		return nil, backend.ErrInvalidCredentials
@@ -56,26 +53,19 @@ func (b *Backend) Login(info *imap.ConnInfo, address, password string) (backend.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	address = strings.ToLower(strings.TrimSpace(address))
-	if b.limiter != nil {
-		host, _, _ := net.SplitHostPort(info.RemoteAddr.String())
-		if !b.limiter.Allow(ctx, ratelimit.Rule{Name: "imap-login", Limit: 30, Window: time.Minute}, host).Allowed {
-			return nil, backend.ErrInvalidCredentials
-		}
+	var host string
+	if info.RemoteAddr != nil {
+		host, _, _ = net.SplitHostPort(info.RemoteAddr.String())
 	}
-	var userID, boxID, hash string
-	err := b.pool.QueryRow(ctx, `SELECT wm.user_id,m.id,i.password_hash FROM mailboxes m JOIN domains d ON d.id=m.domain_id
- JOIN workspaces w ON w.id=coalesce(m.personal_workspace_id,d.workspace_id)
- JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=coalesce(m.owner_user_id,w.personal_owner_id)
- JOIN identities i ON i.user_id=wm.user_id AND i.provider='password'
- WHERE lower(m.local_part || '@' || d.domain)=$1 AND d.verified_at IS NOT NULL AND NOT EXISTS(SELECT 1 FROM users WHERE id=wm.user_id AND must_change_password)`, address).Scan(&userID, &boxID, &hash)
-	if err != nil {
-		bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
+	if !mailauth.Allow(ctx, b.limiter, "imap", host, address) {
 		return nil, backend.ErrInvalidCredentials
 	}
-	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
+	// Mailbox SMTP passwords are send-only and never open IMAP.
+	p, ok := mailauth.Login(ctx, b.pool, address, password, mailauth.Account)
+	if !ok {
 		return nil, backend.ErrInvalidCredentials
 	}
-	return &User{b: b, id: userID, box: boxID, address: address, passwordHash: hash}, nil
+	return &User{b: b, id: p.UserID, box: p.MailboxID, address: address, passwordHash: p.Hash}, nil
 }
 
 type User struct {
