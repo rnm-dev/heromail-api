@@ -83,6 +83,6 @@ func (s *Store) SetMembers(ctx context.Context, workspaceID, mailboxID string, u
 // CanReadOutbound also protects status/detail responses containing the body.
 func (s *Store) CanReadOutbound(ctx context.Context, userID, emailID string) (bool, error) {
 	var allowed bool
-	err := s.pool.QueryRow(ctx, `SELECT (e.retained_owner_id IS NULL OR e.retained_owner_id::text=$1) AND NOT EXISTS(SELECT 1 FROM mailboxes m JOIN domains d ON d.id=m.domain_id WHERE coalesce(m.personal_workspace_id,d.workspace_id)=e.workspace_id AND lower(m.local_part || '@' || d.domain)=lower(e.from_addr) AND (m.owner_user_id IS NOT NULL OR EXISTS(SELECT 1 FROM mailbox_members mx WHERE mx.mailbox_id=m.id)) AND m.owner_user_id IS DISTINCT FROM $1::uuid AND NOT EXISTS(SELECT 1 FROM mailbox_members mm WHERE mm.mailbox_id=m.id AND mm.user_id::text=$1)) FROM emails e WHERE e.id=$2`, userID, emailID).Scan(&allowed)
+	err := s.pool.QueryRow(ctx, `SELECT (e.retained_owner_id IS NULL OR e.retained_owner_id::text=$1) AND NOT EXISTS(SELECT 1 FROM mailboxes m JOIN domains d ON d.id=m.domain_id WHERE coalesce(m.personal_workspace_id,d.workspace_id)=e.workspace_id AND lower(m.local_part || '@' || d.domain)=lower(e.from_addr) AND (m.owner_user_id IS NOT NULL OR EXISTS(SELECT 1 FROM mailbox_members mx WHERE mx.mailbox_id=m.id)) AND m.owner_user_id::text IS DISTINCT FROM $1 AND NOT EXISTS(SELECT 1 FROM mailbox_members mm WHERE mm.mailbox_id=m.id AND mm.user_id::text=$1)) FROM emails e WHERE e.id=$2`, userID, emailID).Scan(&allowed)
 	return allowed, err
 }
