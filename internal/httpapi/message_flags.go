@@ -31,12 +31,18 @@ func (s *Server) UpdateMessageFlags(ctx context.Context, r UpdateMessageFlagsReq
 	return UpdateMessageFlags200JSONResponse(receivedMessageToAPI(updated)), nil
 }
 
-func (s *Server) GetUnreadCounts(ctx context.Context, _ GetUnreadCountsRequestObject) (GetUnreadCountsResponseObject, error) {
+func (s *Server) GetUnreadCounts(ctx context.Context, r GetUnreadCountsRequestObject) (GetUnreadCountsResponseObject, error) {
 	user, ok := account.CurrentUser(ctx)
 	if !ok {
 		return GetUnreadCounts401JSONResponse{UnauthorizedJSONResponse(errorBody("unauthenticated", "no session"))}, nil
 	}
-	counts, err := s.inbound.UnreadCounts(ctx, user.ID)
+	// An unreadable box simply counts nothing: the access predicate still applies.
+	var box *string
+	if r.Params.Box != nil {
+		id := r.Params.Box.String()
+		box = &id
+	}
+	counts, err := s.inbound.UnreadCounts(ctx, user.ID, box)
 	if err != nil {
 		return nil, err
 	}

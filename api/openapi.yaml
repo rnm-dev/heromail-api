@@ -1064,6 +1064,12 @@ paths:
     get:
       operationId: getUnreadCounts
       security: [{ session: [] }]
+      parameters:
+        - name: box
+          in: query
+          required: false
+          description: Count only this mailbox; without it, every accessible mailbox.
+          schema: { type: string, format: uuid }
       responses:
         '200':
           description: Unread counts across accessible mailboxes by folder, plus starred

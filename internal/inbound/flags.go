@@ -13,14 +13,16 @@ func (s *Store) UpdateFlags(ctx context.Context, box, id string, read, starred *
  WHERE mailbox_id=$1 AND id=$2 RETURNING `+strings.ReplaceAll(messageColumns, "msg.", ""), box, id, read, starred))
 }
 
-func (s *Store) UnreadCounts(ctx context.Context, userID string) (map[string]int, error) {
+// UnreadCounts covers every mailbox the user can read, or only box when given.
+func (s *Store) UnreadCounts(ctx context.Context, userID string, box *string) (map[string]int, error) {
 	rows, err := s.pool.Query(ctx, `SELECT msg.folder,count(*),count(*) FILTER (WHERE '\Flagged'=ANY(msg.imap_flags)),
  count(*) FILTER (WHERE msg.category='people'),count(*) FILTER (WHERE msg.category='notifications'),count(*) FILTER (WHERE msg.category='newsletters')
  FROM messages msg JOIN mailboxes m ON m.id=msg.mailbox_id JOIN domains d ON d.id=m.domain_id
  JOIN workspaces w ON w.id=coalesce(m.personal_workspace_id,d.workspace_id)
  JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=$1
  WHERE msg.read_at IS NULL AND ((coalesce(m.owner_user_id,w.personal_owner_id) IS NULL AND NOT EXISTS(SELECT 1 FROM mailbox_members mx WHERE mx.mailbox_id=m.id)) OR coalesce(m.owner_user_id,w.personal_owner_id)=$1 OR EXISTS(SELECT 1 FROM mailbox_members mm WHERE mm.mailbox_id=m.id AND mm.user_id=$1))
- GROUP BY msg.folder`, userID)
+ AND ($2::uuid IS NULL OR m.id=$2)
+ GROUP BY msg.folder`, userID, box)
 	if err != nil {
 		return nil, err
 	}

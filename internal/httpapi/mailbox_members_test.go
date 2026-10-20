@@ -78,6 +78,21 @@ func TestMailboxMembersAccess(t *testing.T) {
 	if counts["INBOX"] != 1 {
 		t.Fatalf("unread counts ignore the grant: %s", r.Body)
 	}
+	// Per-mailbox counts: the chosen box only; another or unreadable box counts nothing.
+	for _, tc := range []struct {
+		box  string
+		want int
+	}{{box.Id.String(), 1}, {"00000000-0000-4000-8000-000000000000", 0}} {
+		r = h.do("GET", "/messages/unread-counts?box="+tc.box, "", colleague)
+		counts = map[string]int{}
+		json.Unmarshal(r.Body.Bytes(), &counts)
+		if r.Code != 200 || counts["INBOX"] != tc.want {
+			t.Fatalf("box %s counts: %d %s", tc.box, r.Code, r.Body)
+		}
+	}
+	if r = h.do("GET", "/messages/unread-counts?box="+box.Id.String(), "", other); r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &counts) != nil || counts["INBOX"] != 0 {
+		t.Fatalf("unassigned member sees counts of a restricted box: %s", r.Body)
+	}
 
 	// Leaving the workspace removes the grant itself.
 	if _, err = h.pool.Exec(ctx, `DELETE FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, ws, colleagueID); err != nil {
