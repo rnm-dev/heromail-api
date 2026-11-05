@@ -236,6 +236,12 @@ func (s *Store) List(ctx context.Context, ws, user, from, to string, offset int)
 		JOIN calendar_attendees a ON a.event_id=i.event_id AND a.email=i.recipient
 		WHERE c.workspace_id=$1 AND c.user_id=$2
 		AND ((e.all_day AND e.start_date<$4::date AND e.end_date>$3::date) OR (NOT e.all_day AND e.start_at<$6 AND e.end_at>$5))
+		UNION ALL
+		SELECT x.id,x.title,x.description,x.location,x.timezone,x.all_day,x.start_at,x.end_at,x.start_date::text,x.end_date::text,1,x.organizer_email,x.uid,x.sequence,'confirmed'::text,0,x.updated_at,
+		'attendee'::text,''::text,x.attendee,x.response,coalesce(x.start_at,x.start_date::timestamp AT TIME ZONE 'UTC')
+		FROM calendar_external_events x JOIN calendars c ON c.id=x.calendar_id
+		WHERE c.workspace_id=$1 AND c.user_id=$2
+		AND ((x.all_day AND x.start_date<$4::date AND x.end_date>$3::date) OR (NOT x.all_day AND x.start_at<$6 AND x.end_at>$5))
 	) items ORDER BY sort_at,id LIMIT 201 OFFSET $7`, ws, user, from, to, start, end, offset)
 	if err != nil {
 		return nil, false, err

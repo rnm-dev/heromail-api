@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/rnm/heromail/backend/internal/calendar"
 	"github.com/rnm/heromail/backend/internal/inbound"
 )
 
@@ -73,8 +75,24 @@ func TestExternalCalendarReply(t *testing.T) {
 		!strings.Contains(ics, "ATTENDEE;PARTSTAT=ACCEPTED:mailto:"+address) || !strings.Contains(ics, "UID:ext-1") {
 		t.Fatalf("sent %s %s %s %s\n%s", to, subject, method, inReplyTo, ics)
 	}
+	events := func() []calendar.Event {
+		r := h.do("GET", path+"/calendar/events?from=2026-10-14&to=2026-10-17", "", token)
+		var body struct {
+			Events []calendar.Event `json:"events"`
+		}
+		if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &body) != nil {
+			t.Fatalf("list %d: %s", r.Code, r.Body)
+		}
+		return body.Events
+	}
+	if list := events(); len(list) != 1 || list[0].Title != "Sync" || list[0].Role != "attendee" || !list[0].StartAt.Equal(time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)) || list[0].Responses[0].Response != "accepted" {
+		t.Fatalf("accepted invite not in calendar: %+v", list)
+	}
 	if r = h.do("POST", reply, `{"response":"accepted"}`, token); r.Code != 200 {
 		t.Fatalf("repeat %d", r.Code)
+	}
+	if list := events(); len(list) != 1 {
+		t.Fatalf("repeat duplicated the event: %+v", list)
 	}
 	if r = h.do("POST", reply, `{"response":"declined"}`, token); r.Code != 200 {
 		t.Fatalf("change %d %s", r.Code, r.Body)
@@ -85,6 +103,9 @@ func TestExternalCalendarReply(t *testing.T) {
 	}
 	if p := detail(); *p.Response != Declined {
 		t.Fatalf("change not recorded %+v", p)
+	}
+	if list := events(); len(list) != 0 {
+		t.Fatalf("declined invite stayed in calendar: %+v", list)
 	}
 
 	// An invitation addressed to somebody else cannot be answered from this mailbox.

@@ -72,3 +72,33 @@ func TestExternalInviteRejectsUnsupportedShapes(t *testing.T) {
 		}
 	}
 }
+
+func TestExternalInviteTimes(t *testing.T) {
+	almaty, _ := time.LoadLocation("Asia/Almaty")
+	invite, err := ParseExternalInvite([]byte(strings.Replace(exchangeInvite, "SEQUENCE:2", "SEQUENCE:2\r\nLOCATION;LANGUAGE=ru-RU:ZOOM", 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, start, end, err := invite.Times(almaty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in.Timezone != "Asia/Qyzylorda" || in.Location != "ZOOM" || !start.Equal(time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)) || end.Sub(start) != 30*time.Minute {
+		t.Fatalf("got %+v %v %v", in, start, end)
+	}
+	unknown := strings.ReplaceAll(exchangeInvite, "Qyzylorda Standard Time", "Custom Zone")
+	invite, _ = ParseExternalInvite([]byte(unknown))
+	if in, start, _, err = invite.Times(time.UTC); err != nil || in.Timezone != "Etc/GMT-5" || start.Hour() != 12 {
+		t.Fatalf("offset fallback %+v %v %v", in, start, err)
+	}
+	utc := strings.ReplaceAll(strings.ReplaceAll(exchangeInvite, "DTSTART;TZID=Qyzylorda Standard Time:20261015T170000", "DTSTART:20261015T120000Z"), "DTEND;TZID=Qyzylorda Standard Time:20261015T173000", "")
+	invite, _ = ParseExternalInvite([]byte(utc))
+	if in, start, end, err = invite.Times(almaty); err != nil || start.Hour() != 12 || end.Sub(start) != time.Hour || in.Timezone != "Asia/Almaty" {
+		t.Fatalf("utc %+v %v %v %v", in, start, end, err)
+	}
+	day := strings.ReplaceAll(strings.ReplaceAll(exchangeInvite, "DTSTART;TZID=Qyzylorda Standard Time:20261015T170000", "DTSTART;VALUE=DATE:20261015"), "DTEND;TZID=Qyzylorda Standard Time:20261015T173000", "DTEND;VALUE=DATE:20261016")
+	invite, _ = ParseExternalInvite([]byte(day))
+	if in, _, _, err = invite.Times(almaty); err != nil || !in.AllDay || in.Start != "2026-10-15" || in.End != "2026-10-16" {
+		t.Fatalf("all day %+v %v", in, err)
+	}
+}

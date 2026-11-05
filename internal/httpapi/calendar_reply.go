@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/rnm/heromail/backend/internal/account"
 	"github.com/rnm/heromail/backend/internal/calendar"
 	"github.com/rnm/heromail/backend/internal/email"
 	"github.com/rnm/heromail/backend/internal/inbound"
@@ -91,6 +92,9 @@ func (s *Server) ReplyMessageCalendar(ctx context.Context, r ReplyMessageCalenda
 		return nil, err
 	}
 	if state.Response == response && state.Sent() {
+		if err := s.saveExternalEvent(ctx, ws, msg.ID, from, response, invite); err != nil {
+			return nil, err
+		}
 		return calendarResponse{200, preview}, nil
 	}
 	if err := s.domains.AllowsAddress(ctx, ws, from); err != nil {
@@ -138,7 +142,27 @@ func (s *Server) ReplyMessageCalendar(ctx context.Context, r ReplyMessageCalenda
 	if err := store.FinishExternalReply(ctx, msg.ID, next.Revision, sent.ID); err != nil {
 		return nil, err
 	}
+	if err := s.saveExternalEvent(ctx, ws, msg.ID, from, response, invite); err != nil {
+		return nil, err
+	}
 	answer := CalendarPreviewResponse(response)
 	preview.Response = &answer
 	return calendarResponse{200, preview}, nil
+}
+
+// saveExternalEvent mirrors the answer into the signed-in user's calendar.
+// The REPLY is already queued, so a time that cannot be read is logged rather
+// than failing the answer.
+func (s *Server) saveExternalEvent(ctx context.Context, ws, messageID, from, response string, invite calendar.ExternalInvite) error {
+	user, ok := account.CurrentUser(ctx)
+	if !ok {
+		return nil
+	}
+	err := calendar.NewStore(s.pool).SaveExternal(ctx, ws, user.ID, messageID, from, response, invite)
+	var verr calendar.ValidationError
+	if errors.As(err, &verr) {
+		log.Printf("calendar reply %s: event not saved: %v", messageID, err)
+		return nil
+	}
+	return err
 }

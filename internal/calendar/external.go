@@ -12,13 +12,15 @@ import (
 )
 
 // ExternalInvite is a REQUEST received by mail from any organizer. It is
-// untrusted input: answering only mails a REPLY from the receiving mailbox and
-// never creates or changes an event.
+// untrusted input: answering mails a REPLY from the receiving mailbox and keeps
+// a private read-only copy in the answering user's calendar (SaveExternal).
 type ExternalInvite struct {
 	UID, Sequence, Title, Organizer string
+	Description, Location           string
 	Attendees                       []string
 	timezones                       []string
 	start, end, summary, organizer  string
+	startProp, endProp              property
 }
 
 type property struct{ name, params, value, line string }
@@ -128,9 +130,13 @@ func ParseExternalInvite(data []byte) (ExternalInvite, error) {
 		case "SUMMARY":
 			out.Title, out.summary = icsUnescape(p.value), line
 		case "DTSTART":
-			out.start = line
+			out.start, out.startProp = line, p
 		case "DTEND":
-			out.end = line
+			out.end, out.endProp = line, p
+		case "LOCATION":
+			out.Location = icsUnescape(p.value)
+		case "DESCRIPTION":
+			out.Description = icsUnescape(p.value)
 		case "ORGANIZER":
 			out.Organizer, out.organizer = mailtoAddress(p.value), line
 		case "ATTENDEE":
