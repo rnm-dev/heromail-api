@@ -230,6 +230,26 @@ paths:
                   has_more: { type: boolean }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+  /contacts/suggestions:
+    get:
+      operationId: suggestRecipients
+      security: [{ session: [] }]
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
+      responses:
+        '200':
+          description: Up to 8 addresses from the private address book, then senders of accessible received mail and recipients of the user's sent mail
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [suggestions]
+                properties:
+                  suggestions:
+                    type: array
+                    items: { $ref: '#/components/schemas/RecipientSuggestion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
   /contacts/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -2086,6 +2106,13 @@ components:
         name: { type: string }
         email: { type: string, format: email }
         version: { type: integer }
+    RecipientSuggestion:
+      type: object
+      required: [name, email, source]
+      properties:
+        name: { type: string }
+        email: { type: string }
+        source: { type: string, enum: [contact, received, sent] }
     MailSignature:
       type: object
       required: [sender, text, version]

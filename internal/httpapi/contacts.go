@@ -133,3 +133,54 @@ func (s *Server) DeleteContact(ctx context.Context, r DeleteContactRequestObject
 	}
 	return DeleteContact204Response{}, nil
 }
+
+// Suggestions draw only on mail the user can already read: the same mailbox
+// access rule as received-mail search, applied to received senders and to
+// recipients of mail sent from those mailboxes. Address-book entries win.
+const suggestRecipientsSQL = `
+WITH box AS (
+ SELECT m.id, lower(m.local_part||'@'||d.domain) addr
+ FROM mailboxes m JOIN domains d ON d.id=m.domain_id
+ JOIN workspaces w ON w.id=coalesce(m.personal_workspace_id,d.workspace_id)
+ JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=$1
+ WHERE ((coalesce(m.owner_user_id,w.personal_owner_id) IS NULL AND NOT EXISTS(SELECT 1 FROM mailbox_members mx WHERE mx.mailbox_id=m.id)) OR coalesce(m.owner_user_id,w.personal_owner_id)=$1 OR EXISTS(SELECT 1 FROM mailbox_members mm WHERE mm.mailbox_id=m.id AND mm.user_id=$1))
+), found AS (
+ SELECT name, email::text email, 0 rank, now() seen, 'contact' source FROM contacts
+ WHERE user_id=$1 AND strpos(lower(name||' '||email),lower($2))>0
+ UNION ALL
+ SELECT coalesce(msg.from_name,''), msg.from_addr, 1, msg.received_at, 'received' FROM messages msg JOIN box ON box.id=msg.mailbox_id
+ WHERE msg.from_addr LIKE '%_@_%' AND msg.folder<>'Junk' AND strpos(lower(coalesce(msg.from_name,'')||' '||msg.from_addr),lower($2))>0
+ UNION ALL
+ SELECT '', a, 1, e.created_at, 'sent' FROM emails e CROSS JOIN LATERAL unnest(e.to_addrs||e.cc_addrs||e.bcc_addrs) a
+ WHERE lower(e.from_addr) IN (SELECT addr FROM box) AND strpos(lower(a),lower($2))>0
+), best AS (
+ SELECT DISTINCT ON (lower(email)) name, email, rank, seen, source FROM found
+ WHERE lower(email) NOT IN (SELECT addr FROM box)
+ ORDER BY lower(email), rank, (name<>'') DESC, seen DESC
+)
+SELECT name, email, source FROM best ORDER BY rank, seen DESC, email LIMIT 8`
+
+func (s *Server) SuggestRecipients(ctx context.Context, r SuggestRecipientsRequestObject) (SuggestRecipientsResponseObject, error) {
+	user, _ := account.CurrentUser(ctx)
+	q := strings.TrimSpace(r.Params.Q)
+	if q == "" || utf8.RuneCountInString(q) > 200 {
+		return SuggestRecipients400JSONResponse{BadRequestJSONResponse(errorBody("validation_failed", "invalid search"))}, nil
+	}
+	rows, err := s.pool.Query(ctx, suggestRecipientsSQL, user.ID, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []RecipientSuggestion{}
+	for rows.Next() {
+		var item RecipientSuggestion
+		if err := rows.Scan(&item.Name, &item.Email, &item.Source); err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return SuggestRecipients200JSONResponse{Suggestions: result}, nil
+}
