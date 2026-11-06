@@ -14,6 +14,19 @@ func (s *Service) ChangeInitialPassword(ctx context.Context, userID, current, pa
 	if current == password {
 		return nil, fmt.Errorf("%w: новый пароль должен отличаться от начального", ErrValidation)
 	}
+	return s.replacePassword(ctx, userID, current, password, true, rc)
+}
+
+// ChangePassword replaces a known password from an ordinary session. Other
+// sessions are revoked so a leaked password stops working everywhere.
+func (s *Service) ChangePassword(ctx context.Context, userID, current, password string, rc RequestContext) (*Credentials, error) {
+	if current == password {
+		return nil, fmt.Errorf("%w: новый пароль должен отличаться от текущего", ErrValidation)
+	}
+	return s.replacePassword(ctx, userID, current, password, false, rc)
+}
+
+func (s *Service) replacePassword(ctx context.Context, userID, current, password string, initial bool, rc RequestContext) (*Credentials, error) {
 	hash, err := hashPassword(password)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrValidation, err)
@@ -27,7 +40,7 @@ func (s *Service) ChangeInitialPassword(ctx context.Context, userID, current, pa
 	if err = tx.QueryRow(ctx, `SELECT must_change_password FROM users WHERE id=$1 FOR UPDATE`, userID).Scan(&required); err != nil {
 		return nil, err
 	}
-	if !required {
+	if initial && !required {
 		return nil, ErrPasswordAlreadyChanged
 	}
 	var old string

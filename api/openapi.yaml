@@ -786,6 +786,34 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /auth/change-password:
+    post:
+      tags: [auth]
+      operationId: changePassword
+      summary: Replace the signed-in user's password
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, password]
+              properties:
+                current_password: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          description: Password replaced, all sessions revoked and a fresh session issued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Credentials' }
+        default:
+          description: Authentication, validation or state error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /auth/me:
     get:
       tags: [auth]
