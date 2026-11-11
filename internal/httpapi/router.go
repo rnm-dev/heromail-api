@@ -73,6 +73,10 @@ func Router(server *Server, apiKeys *auth.Authenticator, accounts *account.Servi
 			return
 		}
 		switch {
+		case calendarFeedPath.MatchString(path):
+			server.calendarFeed(w, r)
+		case calendarFeedSettingsPath.MatchString(path):
+			accounts.RequireSession(http.HandlerFunc(server.calendarFeedSettings)).ServeHTTP(w, r)
 		case path == "/assistant/recipients":
 			server.assistantRecipients(w, r)
 		case path == "/assistant/me":
