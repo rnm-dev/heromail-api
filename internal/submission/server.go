@@ -85,7 +85,7 @@ func (s *session) Auth(mech string) (sasl.Server, error) {
 		if !mailauth.Allow(ctx, s.b.Limiter, "submission", host, address) {
 			return smtp.ErrAuthFailed
 		}
-		p, ok := mailauth.Login(ctx, s.b.Pool, address, password, mailauth.Application, mailauth.Account)
+		p, ok := mailauth.Login(ctx, s.b.Pool, address, password, mailauth.Kinds(password, mailauth.Application, mailauth.Account)...)
 		if !ok {
 			return smtp.ErrAuthFailed
 		}

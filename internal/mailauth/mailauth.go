@@ -4,6 +4,7 @@ package mailauth
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -20,7 +21,22 @@ const (
 	Account Kind = iota
 	// Application is a send-only mailbox SMTP password issued by an administrator.
 	Application
+	// Assistant is a personal key the mailbox owner issued for an AI assistant:
+	// IMAP and submission for that mailbox only.
+	Assistant
 )
+
+// AssistantKeyPrefix marks assistant keys, so logins only spend a bcrypt
+// comparison on the assistant credential when the password can be one.
+const AssistantKeyPrefix = "hm_ai_"
+
+// Kinds returns the credential kinds worth checking for password, in order.
+func Kinds(password string, kinds ...Kind) []Kind {
+	if strings.HasPrefix(password, AssistantKeyPrefix) {
+		return append([]Kind{Assistant}, kinds...)
+	}
+	return kinds
+}
 
 // Principal is an authenticated mailbox login. Hash is the credential hash the
 // login matched; callers compare it later to revoke sessions after changes.
@@ -46,6 +62,12 @@ var queries = map[Kind]string{
  JOIN domains d ON d.id=m.domain_id JOIN workspaces w ON w.id=coalesce(m.personal_workspace_id,d.workspace_id)
  JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=c.issued_by AND wm.role IN ('owner','admin')
  WHERE lower(m.local_part||'@'||d.domain)=$1 AND d.verified_at IS NOT NULL`,
+	// Valid only while its issuer still owns the mailbox and may sign in.
+	Assistant: `SELECT k.user_id,m.id,w.id,k.key_hash FROM mailbox_assistant_keys k JOIN mailboxes m ON m.id=k.mailbox_id
+ JOIN domains d ON d.id=m.domain_id JOIN workspaces w ON w.id=coalesce(m.personal_workspace_id,d.workspace_id)
+ JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=k.user_id AND k.user_id=coalesce(m.owner_user_id,w.personal_owner_id)
+ JOIN users u ON u.id=k.user_id
+ WHERE lower(m.local_part||'@'||d.domain)=$1 AND d.verified_at IS NOT NULL AND NOT u.must_change_password`,
 }
 
 // dummyHash is compared against for unknown addresses so response time does not

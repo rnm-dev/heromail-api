@@ -61,16 +61,17 @@ func (b *Backend) Login(info *imap.ConnInfo, address, password string) (backend.
 		return nil, backend.ErrInvalidCredentials
 	}
 	// Mailbox SMTP passwords are send-only and never open IMAP.
-	p, ok := mailauth.Login(ctx, b.pool, address, password, mailauth.Account)
+	p, ok := mailauth.Login(ctx, b.pool, address, password, mailauth.Kinds(password, mailauth.Account)...)
 	if !ok {
 		return nil, backend.ErrInvalidCredentials
 	}
-	return &User{b: b, id: p.UserID, box: p.MailboxID, address: address, passwordHash: p.Hash}, nil
+	return &User{b: b, id: p.UserID, box: p.MailboxID, address: address, passwordHash: p.Hash, kind: p.Kind}, nil
 }
 
 type User struct {
 	b                              *Backend
 	id, box, address, passwordHash string
+	kind                           mailauth.Kind
 }
 
 func (u *User) Username() string { return u.address }
@@ -82,6 +83,13 @@ func (u *User) check(ctx context.Context) error {
 	}
 	if !allowed {
 		return backend.ErrInvalidCredentials
+	}
+	if u.kind == mailauth.Assistant {
+		// Key rotation or deletion, reassignment and domain suspension revoke the connection.
+		if p, err := mailauth.Lookup(ctx, u.b.pool, u.address, mailauth.Assistant); err != nil || p.Hash != u.passwordHash || p.UserID != u.id || p.MailboxID != u.box {
+			return backend.ErrInvalidCredentials
+		}
+		return nil
 	}
 	// Removal, reassignment, domain suspension and password changes revoke existing connections.
 	var active bool

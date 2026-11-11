@@ -34,6 +34,48 @@ tags:
 security: []
 
 paths:
+  /assistant-keys:
+    get:
+      operationId: listAssistantKeys
+      security: [{ session: [] }]
+      summary: Mailboxes the signed-in user owns, with their AI assistant key status
+      responses:
+        '200':
+          description: Owned mailboxes
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mailboxes]
+                properties:
+                  mailboxes: { type: array, items: { $ref: '#/components/schemas/AssistantKey' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /assistant-keys/{mailboxId}:
+    parameters:
+      - { name: mailboxId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      operationId: issueAssistantKey
+      security: [{ session: [] }]
+      summary: Issue or rotate the personal AI assistant key (IMAP + SMTP) for an owned mailbox
+      responses:
+        '201':
+          description: New key, shown once
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [key, mailbox]
+                properties:
+                  key: { type: string }
+                  mailbox: { $ref: '#/components/schemas/AssistantKey' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: deleteAssistantKey
+      security: [{ session: [] }]
+      responses:
+        '204': { description: Key revoked }
+        '401': { $ref: '#/components/responses/Unauthorized' }
   /workspaces/{slug}/mailboxes/{mailboxId}/automation:
     parameters:
       - { name: slug, in: path, required: true, schema: { type: string } }
@@ -2064,6 +2106,14 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    AssistantKey:
+      type: object
+      required: [mailbox_id, address]
+      properties:
+        mailbox_id: { type: string, format: uuid }
+        address: { type: string }
+        key_prefix: { type: string, description: Present when a key exists }
+        created_at: { type: string, format: date-time }
     MailFolder:
       type: object
       required: [name, uidvalidity, system, total, unread]
