@@ -70,6 +70,8 @@ func Router(server *Server, apiKeys *auth.Authenticator, accounts *account.Servi
 			r.Body = http.MaxBytesReader(w, r.Body, 2*1024*1024)
 		}
 		switch {
+		case path == "/assistant/recipients":
+			server.assistantRecipients(w, r)
 		case strings.HasPrefix(path, "/v1/"):
 			apiKeyGuarded.ServeHTTP(w, r)
 		case path == "/contacts" || strings.HasPrefix(path, "/contacts/"),

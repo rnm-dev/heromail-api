@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"math/big"
 	"net"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -155,5 +157,46 @@ func startTestIMAP(t *testing.T, h *harness) func() *client.Client {
 		c.Timeout = 5 * time.Second
 		t.Cleanup(func() { c.Terminate() })
 		return c
+	}
+}
+
+func TestAssistantRecipients(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	token, userID, _ := h.registerUser("ai-book")
+	ws := h.workspaceFor(token, "ai-book")
+	t.Cleanup(func() { h.pool.Exec(context.Background(), `DELETE FROM workspaces WHERE id=$1`, ws) })
+	domain := h.verifiedDomainFor(t, ws)
+	store := inbound.NewStore(h.pool)
+	box, err := store.CreateMailbox(ctx, mustDomainID(t, h, domain), "me", "Me", &userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateMailbox(ctx, mustDomainID(t, h, domain), "colleague", "Коллега Иванов", nil); err != nil {
+		t.Fatal(err)
+	}
+	h.do("PUT", "/contacts/"+"5a7c3e1e-0000-4000-8000-000000000001", `{"name":"Анна Петрова","email":"anna@example.test","version":0}`, token)
+	r := h.do("PUT", "/assistant-keys/"+box.ID, "", token)
+	var issued struct{ Key string }
+	json.Unmarshal(r.Body.Bytes(), &issued)
+	get := func(user, pass, q string) (int, string) {
+		req := httptest.NewRequest("GET", "/assistant/recipients?q="+url.QueryEscape(q), nil)
+		req.SetBasicAuth(user, pass)
+		rec := httptest.NewRecorder()
+		h.handler.ServeHTTP(rec, req)
+		return rec.Code, rec.Body.String()
+	}
+	if code, _ := get(box.Address, "hm_ai_wrong", ""); code != 401 {
+		t.Fatalf("wrong key: %d", code)
+	}
+	if code, _ := get(box.Address, token, ""); code != 401 {
+		t.Fatalf("session token accepted: %d", code)
+	}
+	code, body := get(box.Address, issued.Key, "")
+	if code != 200 || !strings.Contains(body, "Анна Петрова") || !strings.Contains(body, "colleague@"+domain) || strings.Contains(body, `"`+box.Address+`"`) {
+		t.Fatalf("all: %d %s", code, body)
+	}
+	if _, body = get(box.Address, issued.Key, "иванов"); !strings.Contains(body, "colleague@") || strings.Contains(body, "anna@") {
+		t.Fatalf("search: %s", body)
 	}
 }
