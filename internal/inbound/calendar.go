@@ -2,7 +2,12 @@ package inbound
 
 import (
 	"bytes"
+	"context"
+	"log"
 	"strings"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/rnm/heromail/backend/internal/calendar"
 )
 
 // CalendarPreview is display-only. An incoming ICS part is untrusted mail;
@@ -92,7 +97,7 @@ func parseCalendarPreview(data []byte) *CalendarPreview {
 	if events != 1 || out.UID == "" || out.Title == "" || out.Start == "" || out.End == "" {
 		return nil
 	}
-	if out.Method != "REQUEST" && out.Method != "CANCEL" {
+	if out.Method != "REQUEST" && out.Method != "CANCEL" && out.Method != "REPLY" {
 		out.Unsupported = true
 	}
 	return out
@@ -104,4 +109,31 @@ func icsUnescape(value string) string {
 	value = strings.ReplaceAll(value, "\\,", ",")
 	value = strings.ReplaceAll(value, "\\;", ";")
 	return strings.ReplaceAll(value, "\\\\", "\\")
+}
+
+// applyCalendar feeds a delivered iTIP part to the calendar inside a savepoint:
+// a calendar failure is logged and never blocks delivery of the message.
+func applyCalendar(ctx context.Context, tx pgx.Tx, p DeliverParams, from string) {
+	pres := Present(p.Raw)
+	if len(pres.CalendarICS) == 0 || from == "" {
+		return
+	}
+	var address string
+	if err := tx.QueryRow(ctx, `SELECT lower(m.local_part||'@'||d.domain) FROM mailboxes m JOIN domains d ON d.id=m.domain_id WHERE m.id=$1`, p.MailboxID).Scan(&address); err != nil {
+		log.Printf("calendar on delivery: mailbox %s: %v", p.MailboxID, err)
+		return
+	}
+	sp, err := tx.Begin(ctx)
+	if err != nil {
+		log.Printf("calendar on delivery: %v", err)
+		return
+	}
+	if err = calendar.ApplyIncoming(ctx, sp, address, from, pres.CalendarICS); err != nil {
+		log.Printf("calendar on delivery: %v", err)
+		_ = sp.Rollback(ctx)
+		return
+	}
+	if err = sp.Commit(ctx); err != nil {
+		log.Printf("calendar on delivery: %v", err)
+	}
 }

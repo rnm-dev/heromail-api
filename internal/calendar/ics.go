@@ -46,7 +46,20 @@ func buildICS(e Event, method, recipient, response string) string {
 	if method == "REPLY" {
 		lines = append(lines, "ATTENDEE;PARTSTAT="+strings.ToUpper(response)+":mailto:"+recipient)
 	} else {
-		lines = append(lines, "ATTENDEE;RSVP=TRUE:mailto:"+recipient)
+		// Everyone invited is listed, as other clients do; the recipient is
+		// the one asked to answer.
+		listed := false
+		for _, a := range e.Responses {
+			if a.Email == recipient {
+				listed = true
+				lines = append(lines, "ATTENDEE;RSVP=TRUE;PARTSTAT="+strings.ToUpper(strings.ReplaceAll(a.Response, "_", "-"))+":mailto:"+a.Email)
+			} else {
+				lines = append(lines, "ATTENDEE;PARTSTAT="+strings.ToUpper(strings.ReplaceAll(a.Response, "_", "-"))+":mailto:"+a.Email)
+			}
+		}
+		if !listed {
+			lines = append(lines, "ATTENDEE;RSVP=TRUE:mailto:"+recipient)
+		}
 	}
 	if e.AllDay {
 		lines = append(lines, "DTSTART;VALUE=DATE:"+strings.ReplaceAll(e.Start, "-", ""), "DTEND;VALUE=DATE:"+strings.ReplaceAll(e.End, "-", ""))

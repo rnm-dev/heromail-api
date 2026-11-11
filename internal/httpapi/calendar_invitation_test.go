@@ -139,7 +139,8 @@ func TestCalendarInvitationResponseAndCancellation(t *testing.T) {
 	if err := json.Unmarshal(r.Body.Bytes(), &invite); err != nil {
 		t.Fatal(err)
 	}
-	if invite.Response != "needs_action" || invite.Event.Sequence != 1 {
+	// A new title is re-sent (SEQUENCE 1) but keeps the answer; only a new time resets it.
+	if invite.Response != "accepted" || invite.Event.Sequence != 1 {
 		t.Fatalf("updated invite %+v", invite)
 	}
 	if r = h.do("DELETE", fmt.Sprintf("%s/%s?version=2", path, event.ID), "", token); r.Code != 204 {

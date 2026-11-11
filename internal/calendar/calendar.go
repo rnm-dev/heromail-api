@@ -289,6 +289,7 @@ func (s *Store) Save(ctx context.Context, ws, user, id string, in Input) (Event,
 	defer tx.Rollback(ctx)
 	var out Event
 	var old Event
+	changed := true
 	if id == "" {
 		if in.Version != 0 {
 			return Event{}, invalid("Версия нового события должна быть 0")
@@ -324,12 +325,25 @@ func (s *Store) Save(ctx context.Context, ws, user, id string, in Input) (Event,
 		if len(old.Attendees) > 0 && old.Organizer != in.Organizer {
 			return Event{}, invalid("Нельзя сменить организатора встречи после приглашения")
 		}
-		out, err = scan(tx.QueryRow(ctx, `UPDATE calendar_events e SET title=$4,description=$5,location=$6,timezone=$7,all_day=$8,start_at=$9,end_at=$10,start_date=$11,end_date=$12,organizer_email=$14,reminder_minutes=$15,version=e.version+1,sequence=e.sequence+1,updated_at=now() FROM calendars c WHERE e.calendar_id=c.id AND c.workspace_id=$1 AND c.user_id=$2 AND e.id=$3 AND e.version=$13 RETURNING `+columns, ws, user, id, in.Title, in.Description, in.Location, in.Timezone, in.AllDay, at, until, day, last, in.Version, in.Organizer, in.ReminderMinutes))
+		// Only a change attendees would see bumps SEQUENCE and re-invites
+		// everyone; only a new time asks them to answer again.
+		retimed := old.AllDay != in.AllDay || old.Start != in.Start || old.End != in.End || old.Timezone != in.Timezone
+		changed = retimed || old.Title != in.Title || old.Description != in.Description || old.Location != in.Location
+		bump := 0
+		if changed {
+			bump = 1
+		}
+		out, err = scan(tx.QueryRow(ctx, `UPDATE calendar_events e SET title=$4,description=$5,location=$6,timezone=$7,all_day=$8,start_at=$9,end_at=$10,start_date=$11,end_date=$12,organizer_email=$14,reminder_minutes=$15,version=e.version+1,sequence=e.sequence+$16,updated_at=now() FROM calendars c WHERE e.calendar_id=c.id AND c.workspace_id=$1 AND c.user_id=$2 AND e.id=$3 AND e.version=$13 RETURNING `+columns, ws, user, id, in.Title, in.Description, in.Location, in.Timezone, in.AllDay, at, until, day, last, in.Version, in.Organizer, in.ReminderMinutes, bump))
 		if err != nil {
 			return Event{}, err
 		}
 		if _, err = tx.Exec(ctx, `UPDATE calendar_jobs SET status='skipped',updated_at=now() WHERE event_id=$1 AND status IN ('pending','failed')`, out.ID); err != nil {
 			return Event{}, err
+		}
+		if retimed {
+			if _, err = tx.Exec(ctx, `UPDATE calendar_attendees SET response='needs_action',responded_at=NULL WHERE event_id=$1`, out.ID); err != nil {
+				return Event{}, err
+			}
 		}
 	}
 	current := make(map[string]bool, len(in.Attendees))
@@ -337,6 +351,15 @@ func (s *Store) Save(ctx context.Context, ws, user, id string, in Input) (Event,
 		current[address] = true
 		if _, err = tx.Exec(ctx, `INSERT INTO calendar_attendees(event_id,email) VALUES($1,$2) ON CONFLICT(event_id,email) DO NOTHING`, out.ID, address); err != nil {
 			return Event{}, err
+		}
+		if !changed {
+			var has bool
+			if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM calendar_jobs WHERE event_id=$1 AND kind='request' AND recipient=$2 AND sequence=$3 AND status IN ('queued','processing'))`, out.ID, address, out.Sequence).Scan(&has); err != nil {
+				return Event{}, err
+			}
+			if has {
+				continue
+			}
 		}
 		if err = s.addJob(ctx, tx, out, "request", address, time.Now()); err != nil {
 			return Event{}, err
@@ -352,11 +375,6 @@ func (s *Store) Save(ctx context.Context, ws, user, id string, in Input) (Event,
 	}
 	if _, err = tx.Exec(ctx, `DELETE FROM calendar_attendees WHERE event_id=$1 AND NOT(email=ANY($2::text[]))`, out.ID, in.Attendees); err != nil {
 		return Event{}, err
-	}
-	if id != "" {
-		if _, err = tx.Exec(ctx, `UPDATE calendar_attendees SET response='needs_action',responded_at=NULL WHERE event_id=$1`, out.ID); err != nil {
-			return Event{}, err
-		}
 	}
 	if out.ReminderMinutes > 0 && out.Organizer != "" {
 		when := start.Add(-time.Duration(out.ReminderMinutes) * time.Minute)
@@ -402,6 +420,22 @@ func (s *Store) Delete(ctx context.Context, ws, user, id string, version int) er
 	}
 	defer tx.Rollback(ctx)
 	e, err := scan(tx.QueryRow(ctx, `SELECT `+columns+` FROM calendar_events e JOIN calendars c ON c.id=e.calendar_id WHERE c.workspace_id=$1 AND c.user_id=$2 AND e.id=$3 FOR UPDATE OF e`, ws, user, id))
+	if errors.Is(err, ErrNotFound) {
+		// Not our own event: a copy of someone else's meeting just leaves our calendar.
+		tag, err := tx.Exec(ctx, `DELETE FROM calendar_imports i USING calendars c WHERE c.id=i.calendar_id AND c.workspace_id=$1 AND c.user_id=$2 AND i.event_id=$3`, ws, user, id)
+		if err != nil {
+			return err
+		}
+		removed := tag.RowsAffected()
+		tag, err = tx.Exec(ctx, `DELETE FROM calendar_external_events x USING calendars c WHERE c.id=x.calendar_id AND c.workspace_id=$1 AND c.user_id=$2 AND x.id=$3`, ws, user, id)
+		if err != nil {
+			return err
+		}
+		if removed+tag.RowsAffected() == 0 {
+			return ErrNotFound
+		}
+		return tx.Commit(ctx)
+	}
 	if err != nil {
 		return err
 	}
@@ -409,7 +443,17 @@ func (s *Store) Delete(ctx context.Context, ws, user, id string, version int) er
 		return ErrConflict
 	}
 	if e.Status == "cancelled" {
-		return ErrConflict
+		var pending bool
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM calendar_jobs WHERE event_id=$1 AND status IN ('pending','processing','failed'))`, id).Scan(&pending); err != nil {
+			return err
+		}
+		if pending {
+			return invalid("Уведомления об отмене ещё отправляются; уберите встречу чуть позже")
+		}
+		if _, err = tx.Exec(ctx, `DELETE FROM calendar_events WHERE id=$1`, id); err != nil {
+			return err
+		}
+		return tx.Commit(ctx)
 	}
 	if err = s.loadAttendees(ctx, tx, &e); err != nil {
 		return err
@@ -462,7 +506,7 @@ func (s *Store) loadAttendees(ctx context.Context, db queryer, e *Event) error {
 	return rows.Err()
 }
 func (s *Store) addJob(ctx context.Context, tx pgx.Tx, e Event, kind, address string, due time.Time) error {
-	_, err := tx.Exec(ctx, `INSERT INTO calendar_jobs(event_id,event_version,kind,recipient,due_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, e.ID, e.Version, kind, address, due)
+	_, err := tx.Exec(ctx, `INSERT INTO calendar_jobs(event_id,event_version,kind,recipient,due_at,sequence) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`, e.ID, e.Version, kind, address, due, e.Sequence)
 	return err
 }
 func (s *Store) loadNotifications(ctx context.Context, db queryer, e *Event) error {

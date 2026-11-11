@@ -29,6 +29,15 @@ func (s *Server) calendarPreview(ctx context.Context, msg *inbound.Message, p in
 		return nil, nil
 	}
 	out := &CalendarPreview{Method: c.Method, Uid: c.UID, Title: c.Title, Start: c.Start, End: c.End, Organizer: c.Organizer, Unsupported: c.Unsupported}
+	// Times with a TZID are sent as UTC instants so the card shows them in the
+	// viewer's zone instead of the organizer's wall clock.
+	if parsed, err := calendar.ParseITIP(p.CalendarICS); err == nil {
+		if fallback, zerr := calendar.Zone("Asia/Almaty"); zerr == nil {
+			if in, start, end, terr := parsed.Times(fallback); terr == nil && !in.AllDay {
+				out.Start, out.End = start.UTC().Format("20060102T150405Z"), end.UTC().Format("20060102T150405Z")
+			}
+		}
+	}
 	invite, err := calendar.ParseExternalInvite(p.CalendarICS)
 	if err != nil {
 		return out, nil

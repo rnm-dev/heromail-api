@@ -178,6 +178,7 @@ func (s *Store) Deliver(ctx context.Context, p DeliverParams) (*Message, error) 
 	if err = s.automate(ctx, tx, p, m); err != nil {
 		return nil, err
 	}
+	applyCalendar(ctx, tx, p, f.FromAddr)
 	m, err = scanMessage(tx.QueryRow(ctx, `SELECT `+messageColumns+` FROM messages msg WHERE id=$1`, m.ID))
 	if err != nil {
 		return nil, err

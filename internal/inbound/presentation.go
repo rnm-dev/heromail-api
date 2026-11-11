@@ -124,11 +124,11 @@ func Present(raw []byte) Presentation {
 		mediaType, _, _ := p.Header.ContentType()
 		if mediaType == "text/calendar" {
 			data, err := io.ReadAll(io.LimitReader(p.Body, (64<<10)+1))
-			if err == nil && len(data) <= 64<<10 && out.Calendar == nil {
+			if err == nil && len(data) <= 64<<10 && out.CalendarICS == nil {
+				// The ICS is kept even without a displayable preview: a REPLY
+				// carries no title or times but still updates the calendar.
 				out.Calendar = parseCalendarPreview(data)
-				if out.Calendar != nil {
-					out.CalendarICS = data
-				}
+				out.CalendarICS = data
 			}
 			return
 		}

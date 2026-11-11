@@ -18,9 +18,12 @@ type ExternalInvite struct {
 	UID, Sequence, Title, Organizer string
 	Description, Location           string
 	Attendees                       []string
-	timezones                       []string
-	start, end, summary, organizer  string
-	startProp, endProp              property
+	// Partstat holds each ATTENDEE's PARTSTAT, upper-case, as sent.
+	Partstat                       map[string]string
+	Method                         string
+	timezones                      []string
+	start, end, summary, organizer string
+	startProp, endProp             property
 }
 
 type property struct{ name, params, value, line string }
@@ -57,6 +60,16 @@ func mailtoAddress(value string) string {
 // ParseExternalInvite accepts one non-recurring VEVENT with METHOD:REQUEST.
 // Other shapes stay download-only rather than answering a single instance.
 func ParseExternalInvite(data []byte) (ExternalInvite, error) {
+	out, err := ParseITIP(data)
+	if err == nil && (out.Method != "REQUEST" || out.start == "") {
+		return ExternalInvite{}, invalid("Это приглашение нельзя подтвердить из Heromail. Скачайте ICS-файл.")
+	}
+	return out, err
+}
+
+// ParseITIP reads one non-recurring VEVENT with any iTIP METHOD (REQUEST,
+// REPLY, CANCEL). Callers check the method and the fields they need.
+func ParseITIP(data []byte) (ExternalInvite, error) {
 	unsupported := invalid("Это приглашение нельзя подтвердить из Heromail. Скачайте ICS-файл.")
 	if len(data) == 0 || len(data) > 64<<10 || bytes.IndexByte(data, 0) >= 0 {
 		return ExternalInvite{}, unsupported
@@ -77,7 +90,7 @@ func ParseExternalInvite(data []byte) (ExternalInvite, error) {
 			lines = append(lines, line)
 		}
 	}
-	var out ExternalInvite
+	out := ExternalInvite{Partstat: map[string]string{}}
 	var method string
 	var stack []string
 	var zone []string
@@ -142,12 +155,14 @@ func ParseExternalInvite(data []byte) (ExternalInvite, error) {
 		case "ATTENDEE":
 			if addr := mailtoAddress(p.value); addr != "" {
 				out.Attendees = append(out.Attendees, addr)
+				out.Partstat[addr] = strings.ToUpper(paramValue(p.params, "PARTSTAT"))
 			}
 		case "RRULE", "RDATE", "EXDATE", "RECURRENCE-ID":
 			return ExternalInvite{}, unsupported
 		}
 	}
-	if method != "REQUEST" || events != 1 || len(stack) != 0 || out.UID == "" || out.Organizer == "" || out.start == "" || len(out.timezones) > 400 {
+	out.Method = method
+	if (method != "REQUEST" && method != "REPLY" && method != "CANCEL") || events != 1 || len(stack) != 0 || out.UID == "" || out.Organizer == "" || len(out.timezones) > 400 {
 		return ExternalInvite{}, unsupported
 	}
 	if out.Sequence == "" {

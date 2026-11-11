@@ -185,7 +185,13 @@ func (d *Dispatcher) process(ctx context.Context, j job) error {
 		method = "REPLY"
 		subject = "Ответ на приглашение: " + e.Title
 	}
-	text := fmt.Sprintf("%s\n%s — %s (%s)\n%s", e.Title, e.Start, e.End, e.Timezone, e.Location)
+	text := e.Title + "\n" + HumanRange(e)
+	if e.Location != "" {
+		text += "\nМесто: " + e.Location
+	}
+	if e.Description != "" && j.Kind != "cancel" {
+		text += "\n\n" + e.Description
+	}
 	if j.Kind == "reply" {
 		text = fmt.Sprintf("%s: %s — %s", j.Actor, j.Response, e.Title)
 	}
