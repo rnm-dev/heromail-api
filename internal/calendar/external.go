@@ -24,6 +24,8 @@ type ExternalInvite struct {
 	timezones                      []string
 	start, end, summary, organizer string
 	startProp, endProp             property
+	rrule                          string
+	exdates                        []property
 }
 
 type property struct{ name, params, value, line string }
@@ -157,7 +159,18 @@ func ParseITIP(data []byte) (ExternalInvite, error) {
 				out.Attendees = append(out.Attendees, addr)
 				out.Partstat[addr] = strings.ToUpper(paramValue(p.params, "PARTSTAT"))
 			}
-		case "RRULE", "RDATE", "EXDATE", "RECURRENCE-ID":
+		case "RRULE":
+			// Only rules Heromail can expand itself; others stay download-only.
+			if _, err := ParseRule(p.value); err != nil || out.rrule != "" {
+				return ExternalInvite{}, unsupported
+			}
+			out.rrule = p.value
+		case "EXDATE":
+			if len(out.exdates) > 500 {
+				return ExternalInvite{}, unsupported
+			}
+			out.exdates = append(out.exdates, p)
+		case "RDATE", "RECURRENCE-ID":
 			return ExternalInvite{}, unsupported
 		}
 	}

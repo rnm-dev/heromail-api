@@ -88,7 +88,11 @@ func parseCalendarPreview(data []byte) *CalendarPreview {
 					out.Organizer = value[7:]
 				}
 			}
-		case "RRULE", "RDATE", "EXDATE", "RECURRENCE-ID":
+		case "RRULE":
+			if _, err := calendar.ParseRule(value); inside && err != nil {
+				out.Unsupported = true
+			}
+		case "RDATE", "RECURRENCE-ID":
 			if inside {
 				out.Unsupported = true
 			}

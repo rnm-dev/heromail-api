@@ -62,7 +62,7 @@ func TestExternalInviteReply(t *testing.T) {
 func TestExternalInviteRejectsUnsupportedShapes(t *testing.T) {
 	for name, ics := range map[string]string{
 		"cancel":    strings.Replace(exchangeInvite, "METHOD:REQUEST", "METHOD:CANCEL", 1),
-		"recurring": strings.Replace(exchangeInvite, "SEQUENCE:2", "SEQUENCE:2\r\nRRULE:FREQ=WEEKLY", 1),
+		"recurring": strings.Replace(exchangeInvite, "SEQUENCE:2", "SEQUENCE:2\r\nRRULE:FREQ=WEEKLY;BYSETPOS=1", 1),
 		"two":       strings.Replace(exchangeInvite, "END:VCALENDAR", "BEGIN:VEVENT\r\nUID:x\r\nEND:VEVENT\r\nEND:VCALENDAR", 1),
 		"unclosed":  strings.Replace(exchangeInvite, "END:VALARM\r\n", "", 1),
 		"no-org":    strings.Replace(exchangeInvite, "MAILTO:Organizer@Bank.test", "MAILTO:nobody", 1),
@@ -100,5 +100,25 @@ func TestExternalInviteTimes(t *testing.T) {
 	invite, _ = ParseExternalInvite([]byte(day))
 	if in, _, _, err = invite.Times(almaty); err != nil || !in.AllDay || in.Start != "2026-10-15" || in.End != "2026-10-16" {
 		t.Fatalf("all day %+v %v", in, err)
+	}
+}
+
+func TestExternalRecurringInvite(t *testing.T) {
+	ics := strings.Replace(exchangeInvite, "SEQUENCE:2\r\n", "SEQUENCE:2\r\nRRULE:FREQ=WEEKLY;UNTIL=20261231T120000Z;BYDAY=TH\r\nEXDATE;TZID=Qyzylorda Standard Time:20261022T170000,20261029T170000\r\n", 1)
+	invite, err := ParseExternalInvite([]byte(ics))
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, _, _, err := invite.Times(time.UTC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in.RRule != "FREQ=WEEKLY;UNTIL=20261231;BYDAY=TH" || strings.Join(in.Exdates, ",") != "2026-10-22,2026-10-29" {
+		t.Fatalf("rule %q exdates %v", in.RRule, in.Exdates)
+	}
+	for _, bad := range []string{"RRULE:FREQ=MONTHLY;BYDAY=2TU\r\n", "RECURRENCE-ID:20261022T170000\r\n", "RDATE:20261023T170000\r\n"} {
+		if _, err := ParseExternalInvite([]byte(strings.Replace(exchangeInvite, "SEQUENCE:2\r\n", "SEQUENCE:2\r\n"+bad, 1))); err == nil {
+			t.Fatalf("accepted %q", bad)
+		}
 	}
 }

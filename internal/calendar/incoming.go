@@ -75,8 +75,8 @@ func ApplyIncoming(ctx context.Context, tx pgx.Tx, recipient, from string, ics [
 				startAt, endAt = start, end
 			}
 			if _, err = tx.Exec(ctx, `UPDATE calendar_external_events SET sequence=$2,title=$3,description=$4,location=$5,timezone=$6,all_day=$7,
-				start_at=$8,end_at=$9,start_date=$10::date,end_date=$11::date,updated_at=now() WHERE id=$1`,
-				c.id, seq, in.Title, in.Description, in.Location, in.Timezone, in.AllDay, startAt, endAt, startDate, endDate); err != nil {
+				start_at=$8,end_at=$9,start_date=$10::date,end_date=$11::date,rrule=$12,exdates=$13,series_until=$14,updated_at=now() WHERE id=$1`,
+				c.id, seq, in.Title, in.Description, in.Location, in.Timezone, in.AllDay, startAt, endAt, startDate, endDate, in.RRule, in.Exdates, seriesEnd(in, start, end)); err != nil {
 				return err
 			}
 		}

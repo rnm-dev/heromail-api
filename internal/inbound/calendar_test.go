@@ -18,7 +18,7 @@ func TestCalendarPreviewAndICSDownload(t *testing.T) {
 	if incomplete || !strings.Contains(string(data), "UID:abc@example.test") {
 		t.Fatalf("download: %q incomplete=%v", data, incomplete)
 	}
-	repeating := strings.Replace(string(raw), "END:VEVENT", "RRULE:FREQ=WEEKLY\r\nEND:VEVENT", 1)
+	repeating := strings.Replace(string(raw), "END:VEVENT", "RRULE:FREQ=MONTHLY;BYDAY=2TU\r\nEND:VEVENT", 1)
 	if got := Present([]byte(repeating)).Calendar; got == nil || !got.Unsupported {
 		t.Fatalf("recurrence supported silently: %+v", got)
 	}

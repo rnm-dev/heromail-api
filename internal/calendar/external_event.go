@@ -104,6 +104,15 @@ func (e ExternalInvite) Times(fallback *time.Location) (in Input, start, end tim
 		}
 		in.Timezone = fallback.String()
 		in.Start, in.End = start.Format("2006-01-02"), end.Format("2006-01-02")
+		for _, p := range e.exdates {
+			for _, v := range strings.Split(p.value, ",") {
+				if v = strings.TrimSpace(v); len(v) >= 8 {
+					if d, err := time.Parse("20060102", v[:8]); err == nil {
+						in.Exdates = append(in.Exdates, d.Format("2006-01-02"))
+					}
+				}
+			}
+		}
 	} else {
 		parse := func(p property) (time.Time, string, error) {
 			v := strings.TrimSpace(p.value)
@@ -118,6 +127,14 @@ func (e ExternalInvite) Times(fallback *time.Location) (in Input, start, end tim
 		var zone string
 		if start, zone, err = parse(e.startProp); err != nil {
 			return in, start, end, bad
+		}
+		loc, _ := e.zoneFor(paramValue(e.startProp.params, "TZID"), fallback)
+		for _, p := range e.exdates {
+			for _, v := range strings.Split(p.value, ",") {
+				if t, _, err := parse(property{params: p.params, value: v}); err == nil {
+					in.Exdates = append(in.Exdates, t.In(loc).Format("2006-01-02"))
+				}
+			}
 		}
 		end = start.Add(time.Hour)
 		if ev != "" {
@@ -142,6 +159,16 @@ func (e ExternalInvite) Times(fallback *time.Location) (in Input, start, end tim
 	in.Description = truncateRunes(e.Description, 20000)
 	in.Location = truncateRunes(e.Location, 2000)
 	in.Organizer = e.Organizer
+	if e.rrule != "" {
+		rule, err := ParseRule(e.rrule)
+		if err != nil {
+			return in, start, end, bad
+		}
+		in.RRule = rule.String(strings.ReplaceAll(rule.Until, "-", ""))
+	}
+	if in.Exdates == nil || in.RRule == "" {
+		in.Exdates = []string{}
+	}
 	return in, start, end, nil
 }
 
@@ -178,18 +205,19 @@ func (s *Store) SaveExternal(ctx context.Context, ws, user, messageID, attendee,
 		return err
 	}
 	seq, _ := strconv.Atoi(invite.Sequence)
+	until := seriesEnd(in, start, end)
 	var startAt, endAt, startDate, endDate any
 	if in.AllDay {
 		startDate, endDate = in.Start, in.End
 	} else {
 		startAt, endAt = start, end
 	}
-	_, err = s.pool.Exec(ctx, `INSERT INTO calendar_external_events(calendar_id,uid,sequence,message_id,attendee,response,organizer_email,title,description,location,timezone,all_day,start_at,end_at,start_date,end_date)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::date,$16::date)
+	_, err = s.pool.Exec(ctx, `INSERT INTO calendar_external_events(calendar_id,uid,sequence,message_id,attendee,response,organizer_email,title,description,location,timezone,all_day,start_at,end_at,start_date,end_date,rrule,exdates,series_until)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::date,$16::date,$17,$18,$19)
 		ON CONFLICT(calendar_id,uid) DO UPDATE SET sequence=EXCLUDED.sequence,message_id=EXCLUDED.message_id,attendee=EXCLUDED.attendee,response=EXCLUDED.response,
 		organizer_email=EXCLUDED.organizer_email,title=EXCLUDED.title,description=EXCLUDED.description,location=EXCLUDED.location,timezone=EXCLUDED.timezone,
-		all_day=EXCLUDED.all_day,start_at=EXCLUDED.start_at,end_at=EXCLUDED.end_at,start_date=EXCLUDED.start_date,end_date=EXCLUDED.end_date,updated_at=now()
+		all_day=EXCLUDED.all_day,start_at=EXCLUDED.start_at,end_at=EXCLUDED.end_at,start_date=EXCLUDED.start_date,end_date=EXCLUDED.end_date,rrule=EXCLUDED.rrule,exdates=EXCLUDED.exdates,series_until=EXCLUDED.series_until,updated_at=now()
 		WHERE calendar_external_events.sequence<=EXCLUDED.sequence`,
-		cal, invite.UID, seq, messageID, strings.ToLower(attendee), response, in.Organizer, in.Title, in.Description, in.Location, in.Timezone, in.AllDay, startAt, endAt, startDate, endDate)
+		cal, invite.UID, seq, messageID, strings.ToLower(attendee), response, in.Organizer, in.Title, in.Description, in.Location, in.Timezone, in.AllDay, startAt, endAt, startDate, endDate, in.RRule, in.Exdates, until)
 	return err
 }
