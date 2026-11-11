@@ -38,27 +38,33 @@ WITH me AS (
 )
 SELECT name, email, source FROM best ORDER BY rank, seen DESC, email LIMIT $4`
 
-// assistantRecipients serves GET /assistant/recipients to AI assistant keys via
-// HTTP Basic (mailbox address, hm_ai_ key). Session tokens and API keys are not accepted.
+// assistantPrincipal authenticates HTTP Basic (mailbox address, hm_ai_ key).
+// Session tokens, API keys and account passwords are never accepted here.
+func (s *Server) assistantPrincipal(w http.ResponseWriter, r *http.Request) (mailauth.Principal, bool) {
+	address, key, ok := r.BasicAuth()
+	address = strings.ToLower(strings.TrimSpace(address))
+	ctx := r.Context()
+	if ok && strings.HasPrefix(key, mailauth.AssistantKeyPrefix) && mailauth.Allow(ctx, s.limiter, "assistant", clientIP(r), address) {
+		if p, ok := mailauth.Login(ctx, s.pool, address, key, mailauth.Assistant); ok {
+			return p, true
+		}
+	}
+	w.Header().Set("WWW-Authenticate", `Basic realm="heromail-assistant"`)
+	writeErrorEnvelope(w, http.StatusUnauthorized, "unauthenticated", "invalid assistant key")
+	return mailauth.Principal{}, false
+}
+
+// assistantRecipients serves GET /assistant/recipients.
 func (s *Server) assistantRecipients(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeErrorEnvelope(w, http.StatusMethodNotAllowed, "method_not_allowed", "use GET")
 		return
 	}
-	address, key, ok := r.BasicAuth()
-	address = strings.ToLower(strings.TrimSpace(address))
-	ctx := r.Context()
-	if !ok || !strings.HasPrefix(key, mailauth.AssistantKeyPrefix) || !mailauth.Allow(ctx, s.limiter, "assistant", clientIP(r), address) {
-		w.Header().Set("WWW-Authenticate", `Basic realm="heromail-assistant"`)
-		writeErrorEnvelope(w, http.StatusUnauthorized, "unauthenticated", "invalid assistant key")
-		return
-	}
-	p, ok := mailauth.Login(ctx, s.pool, address, key, mailauth.Assistant)
+	p, ok := s.assistantPrincipal(w, r)
 	if !ok {
-		w.Header().Set("WWW-Authenticate", `Basic realm="heromail-assistant"`)
-		writeErrorEnvelope(w, http.StatusUnauthorized, "unauthenticated", "invalid assistant key")
 		return
 	}
+	ctx := r.Context()
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit <= 0 || limit > 500 {

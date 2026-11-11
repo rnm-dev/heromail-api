@@ -69,9 +69,16 @@ func Router(server *Server, apiKeys *auth.Authenticator, accounts *account.Servi
 		if strings.Contains(path, "/drafts/") || strings.HasSuffix(path, "/mail-signatures") {
 			r.Body = http.MaxBytesReader(w, r.Body, 2*1024*1024)
 		}
+		if server.assistantCalendar(accounts, generated, w, r) {
+			return
+		}
 		switch {
 		case path == "/assistant/recipients":
 			server.assistantRecipients(w, r)
+		case path == "/assistant/me":
+			server.assistantMe()(w, r)
+		case path == "/assistant/invite-reply":
+			server.assistantInviteReply(accounts)(w, r)
 		case strings.HasPrefix(path, "/v1/"):
 			apiKeyGuarded.ServeHTTP(w, r)
 		case path == "/contacts" || strings.HasPrefix(path, "/contacts/"),
