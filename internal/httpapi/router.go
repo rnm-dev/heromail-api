@@ -75,6 +75,8 @@ func Router(server *Server, apiKeys *auth.Authenticator, accounts *account.Servi
 		switch {
 		case calendarFeedPath.MatchString(path):
 			server.calendarFeed(w, r)
+		case calendarCopyReminderPath.MatchString(path):
+			accounts.RequireSession(http.HandlerFunc(server.calendarCopyReminder)).ServeHTTP(w, r)
 		case calendarBusyPath.MatchString(path):
 			accounts.RequireSession(http.HandlerFunc(server.calendarBusy)).ServeHTTP(w, r)
 		case calendarFeedSettingsPath.MatchString(path):

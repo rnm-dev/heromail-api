@@ -120,3 +120,9 @@ func clientIP(r *http.Request) string {
 	}
 	return r.RemoteAddr
 }
+
+// ContextWithUser acts as the given user outside an HTTP request, for
+// background work done on that user's behalf (e.g. their own reminders).
+func ContextWithUser(ctx context.Context, u *User) context.Context {
+	return context.WithValue(ctx, userKey, u)
+}

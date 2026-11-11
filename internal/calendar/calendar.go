@@ -268,13 +268,13 @@ func (s *Store) List(ctx context.Context, ws, user, from, to string, offset int)
 		FROM calendar_events e JOIN calendars c ON c.id=e.calendar_id WHERE c.workspace_id=$1 AND c.user_id=$2
 		AND ((e.rrule='' AND ((e.all_day AND e.start_date<$4::date AND e.end_date>$3::date) OR (NOT e.all_day AND e.start_at<$6 AND e.end_at>$5))) OR (e.rrule<>'' AND coalesce(e.start_at,e.start_date::timestamptz)<$6+interval '1 day' AND (e.series_until IS NULL OR e.series_until>$5-interval '1 day')))
 		UNION ALL
-		SELECT `+columns+`, 'attendee'::text, a.response_token::text,i.recipient,a.response,coalesce(e.start_at,e.start_date::timestamp AT TIME ZONE 'UTC')
+		SELECT `+strings.Replace(columns, "e.reminder_minutes", "i.reminder_minutes", 1)+`, 'attendee'::text, a.response_token::text,i.recipient,a.response,coalesce(e.start_at,e.start_date::timestamp AT TIME ZONE 'UTC')
 		FROM calendar_imports i JOIN calendars c ON c.id=i.calendar_id JOIN calendar_events e ON e.id=i.event_id
 		JOIN calendar_attendees a ON a.event_id=i.event_id AND a.email=i.recipient
 		WHERE c.workspace_id=$1 AND c.user_id=$2
 		AND ((e.rrule='' AND ((e.all_day AND e.start_date<$4::date AND e.end_date>$3::date) OR (NOT e.all_day AND e.start_at<$6 AND e.end_at>$5))) OR (e.rrule<>'' AND coalesce(e.start_at,e.start_date::timestamptz)<$6+interval '1 day' AND (e.series_until IS NULL OR e.series_until>$5-interval '1 day')))
 		UNION ALL
-		SELECT x.id,x.title,x.description,x.location,x.timezone,x.all_day,x.start_at,x.end_at,x.start_date::text,x.end_date::text,1,x.organizer_email,x.uid,x.sequence,'confirmed'::text,0,x.updated_at,x.rrule,x.exdates,
+		SELECT x.id,x.title,x.description,x.location,x.timezone,x.all_day,x.start_at,x.end_at,x.start_date::text,x.end_date::text,1,x.organizer_email,x.uid,x.sequence,'confirmed'::text,x.reminder_minutes,x.updated_at,x.rrule,x.exdates,
 		'attendee'::text,''::text,x.attendee,x.response,coalesce(x.start_at,x.start_date::timestamp AT TIME ZONE 'UTC')
 		FROM calendar_external_events x JOIN calendars c ON c.id=x.calendar_id
 		WHERE c.workspace_id=$1 AND c.user_id=$2

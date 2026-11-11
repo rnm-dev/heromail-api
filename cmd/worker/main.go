@@ -103,6 +103,7 @@ func main() {
 	dispatchCtx, stopDispatch := context.WithCancel(ctx)
 	defer stopDispatch()
 	go calendar.NewDispatcher(pool, calendarMailer).WithLimiter(calendarLimiter).Run(dispatchCtx)
+	go calendar.NewCopyReminders(calendar.NewStore(pool), calendarMailer).Run(dispatchCtx)
 	go inbound.NewVacationDispatcher(pool, calendarMailer).WithLimiter(calendarLimiter).Run(dispatchCtx)
 
 	mux := asynq.NewServeMux()

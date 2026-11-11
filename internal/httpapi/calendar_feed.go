@@ -113,3 +113,40 @@ func (s *Server) calendarBusy(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"busy": busy})
 }
+
+var calendarCopyReminderPath = regexp.MustCompile(`^/workspaces/([^/]+)/calendar/events/([0-9a-fA-F-]{36})/reminder$`)
+
+// calendarCopyReminder serves PUT .../calendar/events/{id}/reminder with
+// {"reminder_minutes": n}: a participant's own reminder on a copied meeting.
+func (s *Server) calendarCopyReminder(w http.ResponseWriter, r *http.Request) {
+	m := calendarCopyReminderPath.FindStringSubmatch(r.URL.Path)
+	if r.Method != http.MethodPut {
+		writeErrorEnvelope(w, http.StatusMethodNotAllowed, "method_not_allowed", "use PUT")
+		return
+	}
+	ws, _, err := s.scope(r.Context(), m[1], workspace.RoleMember)
+	if err != nil {
+		writeErrorEnvelope(w, http.StatusNotFound, "not_found", "workspace not found")
+		return
+	}
+	var body struct {
+		ReminderMinutes int `json:"reminder_minutes"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&body); err != nil {
+		writeErrorEnvelope(w, http.StatusBadRequest, "invalid_json", "a JSON body is required")
+		return
+	}
+	user, _ := account.CurrentUser(r.Context())
+	err = calendar.NewStore(s.pool).SetCopyReminder(r.Context(), ws, user.ID, strings.ToLower(m[2]), body.ReminderMinutes)
+	var verr calendar.ValidationError
+	switch {
+	case errors.As(err, &verr):
+		writeErrorEnvelope(w, http.StatusBadRequest, "validation_failed", verr.Message)
+	case errors.Is(err, calendar.ErrNotFound):
+		writeErrorEnvelope(w, http.StatusNotFound, "not_found", "event not found")
+	case err != nil:
+		writeErrorEnvelope(w, http.StatusInternalServerError, "internal", "internal server error")
+	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
