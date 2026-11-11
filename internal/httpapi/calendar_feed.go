@@ -69,3 +69,47 @@ func (s *Server) calendarFeed(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Robots-Tag", "noindex")
 	w.Write([]byte(body))
 }
+
+var calendarBusyPath = regexp.MustCompile(`^/workspaces/([^/]+)/calendar/busy$`)
+
+// calendarBusy serves GET /workspaces/{slug}/calendar/busy?from=&to=&emails=a,b
+// behind a session: busy intervals of the caller ("") and of colleagues.
+func (s *Server) calendarBusy(w http.ResponseWriter, r *http.Request) {
+	m := calendarBusyPath.FindStringSubmatch(r.URL.Path)
+	if r.Method != http.MethodGet {
+		writeErrorEnvelope(w, http.StatusMethodNotAllowed, "method_not_allowed", "use GET")
+		return
+	}
+	ws, _, err := s.scope(r.Context(), m[1], workspace.RoleMember)
+	if err != nil {
+		writeErrorEnvelope(w, http.StatusNotFound, "not_found", "workspace not found")
+		return
+	}
+	user, _ := account.CurrentUser(r.Context())
+	q := r.URL.Query()
+	from, to := q.Get("from"), q.Get("to")
+	a, err1 := time.Parse("2006-01-02", from)
+	b, err2 := time.Parse("2006-01-02", to)
+	if err1 != nil || err2 != nil || !b.After(a) || b.Sub(a) > 14*24*time.Hour {
+		writeErrorEnvelope(w, http.StatusBadRequest, "validation_failed", "Диапазон занятости — от 1 до 14 дней")
+		return
+	}
+	var emails []string
+	for _, e := range strings.Split(q.Get("emails"), ",") {
+		if e = strings.TrimSpace(e); e != "" {
+			emails = append(emails, e)
+		}
+	}
+	busy, err := calendar.NewStore(s.pool).BusyTimes(r.Context(), ws, user.ID, from, to, q.Get("exclude"), emails)
+	var verr calendar.ValidationError
+	if errors.As(err, &verr) {
+		writeErrorEnvelope(w, http.StatusBadRequest, "validation_failed", verr.Message)
+		return
+	}
+	if err != nil {
+		writeErrorEnvelope(w, http.StatusInternalServerError, "internal", "internal server error")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"busy": busy})
+}
