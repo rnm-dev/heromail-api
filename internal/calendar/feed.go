@@ -54,6 +54,10 @@ func (s *Store) Feed(ctx context.Context, token string, now time.Time) (string, 
 				return "", err
 			}
 			for _, e := range page {
+				if e.Occurrence != "" {
+					// A series is published once, as its master with RRULE.
+					e.Start, e.End, e.StartAt, e.EndAt = e.SeriesStart, e.SeriesEnd, e.seriesAt, e.seriesEndAt
+				}
 				if !seen[e.ID] {
 					seen[e.ID] = true
 					events = append(events, e)
@@ -77,6 +81,7 @@ func (s *Store) Feed(ctx context.Context, token string, now time.Time) (string, 
 		} else {
 			lines = append(lines, "DTSTART:"+e.StartAt.UTC().Format("20060102T150405Z"), "DTEND:"+e.EndAt.UTC().Format("20060102T150405Z"))
 		}
+		lines = append(lines, recurrenceLines(e)...)
 		if e.Location != "" {
 			lines = append(lines, "LOCATION:"+icsEscape(e.Location))
 		}

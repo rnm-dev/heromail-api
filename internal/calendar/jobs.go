@@ -18,7 +18,7 @@ import (
 
 type job struct {
 	ID, EventID, Kind, Recipient, Actor, Response string
-	Version, Attempts                             int
+	Version, Attempts, ResponseVersion            int
 }
 
 // Dispatcher drains durable calendar jobs into the ordinary outbound queue.
@@ -75,7 +75,7 @@ func (d *Dispatcher) claim(ctx context.Context, eventID *string) (job, bool, err
 		AND (status IN ('pending','failed') OR (status='processing' AND claimed_at<now()-interval '5 minutes'))
 		ORDER BY due_at,id LIMIT 1 FOR UPDATE SKIP LOCKED)
 		UPDATE calendar_jobs j SET status='processing',claimed_at=now(),attempts=j.attempts+1,updated_at=now()
-		FROM picked WHERE j.id=picked.id RETURNING j.id,j.event_id,j.event_version,j.kind,j.recipient,j.actor,j.response,j.attempts`, eventID).Scan(&j.ID, &j.EventID, &j.Version, &j.Kind, &j.Recipient, &j.Actor, &j.Response, &j.Attempts)
+		FROM picked WHERE j.id=picked.id RETURNING j.id,j.event_id,j.event_version,j.kind,j.recipient,j.actor,j.response,j.attempts,j.response_version`, eventID).Scan(&j.ID, &j.EventID, &j.Version, &j.Kind, &j.Recipient, &j.Actor, &j.Response, &j.Attempts, &j.ResponseVersion)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return j, false, nil
 	}
@@ -178,8 +178,10 @@ func (d *Dispatcher) process(ctx context.Context, j job) error {
 		method = "CANCEL"
 		subject = "Отмена встречи: " + e.Title
 	}
+	series := e
 	if j.Kind == "reminder" {
 		subject = "Напоминание: " + e.Title
+		e = atOccurrence(e, time.Unix(int64(j.ResponseVersion)*60, 0))
 	}
 	if j.Kind == "reply" {
 		method = "REPLY"
@@ -222,6 +224,13 @@ func (d *Dispatcher) process(ctx context.Context, j job) error {
 	_, err = tx.Exec(ctx, `UPDATE calendar_jobs SET status='queued',email_id=$2,last_error=NULL,updated_at=now() WHERE id=$1`, j.ID, msg.ID)
 	if err != nil {
 		return err
+	}
+	if j.Kind == "reminder" && series.RRule != "" {
+		if next, ok := nextReminder(series, time.Unix(int64(j.ResponseVersion)*60, 0)); ok {
+			if err = d.store.addReminder(ctx, tx, series, next); err != nil {
+				return err
+			}
+		}
 	}
 	return tx.Commit(ctx)
 }

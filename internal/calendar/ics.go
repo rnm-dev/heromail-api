@@ -66,6 +66,9 @@ func buildICS(e Event, method, recipient, response string) string {
 	} else {
 		lines = append(lines, "DTSTART:"+e.StartAt.UTC().Format("20060102T150405Z"), "DTEND:"+e.EndAt.UTC().Format("20060102T150405Z"))
 	}
+	if method != "REPLY" {
+		lines = append(lines, recurrenceLines(e)...)
+	}
 	if method == "CANCEL" {
 		lines = append(lines, "STATUS:CANCELLED")
 	}
