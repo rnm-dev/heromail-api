@@ -108,7 +108,7 @@ func (s *Server) calendarBusy(w http.ResponseWriter, r *http.Request) {
 		if settings, err = store.Settings(r.Context(), ws, user.ID, nil); err == nil {
 			zone, _ := calendar.Zone(settings.Timezone)
 			var rooms map[string][]calendar.Busy
-			if rooms, err = store.RoomBusy(r.Context(), ws, strings.Split(q.Get("rooms"), ","), from, to, zone); err == nil {
+			if rooms, err = store.RoomBusy(r.Context(), ws, strings.Split(q.Get("rooms"), ","), from, to, q.Get("exclude"), zone); err == nil {
 				for k, v := range rooms {
 					busy[k] = v
 				}

@@ -180,7 +180,7 @@ func (s *Store) checkRoom(ctx context.Context, tx pgx.Tx, ws, id string, in Inpu
 }
 
 // RoomBusy lists when rooms are booked in [from,to) (dates in the zone).
-func (s *Store) RoomBusy(ctx context.Context, ws string, rooms []string, from, to string, zone *time.Location) (map[string][]Busy, error) {
+func (s *Store) RoomBusy(ctx context.Context, ws string, rooms []string, from, to, except string, zone *time.Location) (map[string][]Busy, error) {
 	a, err1 := time.ParseInLocation("2006-01-02", from, zone)
 	b, err2 := time.ParseInLocation("2006-01-02", to, zone)
 	if err1 != nil || err2 != nil || len(rooms) > 20 {
@@ -188,7 +188,7 @@ func (s *Store) RoomBusy(ctx context.Context, ws string, rooms []string, from, t
 	}
 	out := map[string][]Busy{}
 	for _, room := range rooms {
-		events, err := roomEvents(ctx, s.pool, ws, room, "", a, b)
+		events, err := roomEvents(ctx, s.pool, ws, room, except, a, b)
 		if err != nil {
 			return nil, err
 		}
