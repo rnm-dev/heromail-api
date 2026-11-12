@@ -1,10 +1,14 @@
 package httpapi
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/rnm/heromail/backend/internal/mailauth"
@@ -38,15 +42,74 @@ WITH me AS (
 )
 SELECT name, email, source FROM best ORDER BY rank, seen DESC, email LIMIT $4`
 
+// assistantKeyCacheTTL bounds how long a successful key check is reused.
+const assistantKeyCacheTTL = 5 * time.Minute
+
+type verifiedKey struct {
+	hash  string
+	until time.Time
+}
+
+// assistantKeyCache remembers (address, key) pairs that passed bcrypt, keyed by a
+// SHA-256 of both so plaintext keys are not kept. An entry only counts while the
+// stored hash is unchanged, so rotation and revocation take effect at once.
+type assistantKeyCache struct {
+	mu      sync.Mutex
+	entries map[[32]byte]verifiedKey
+}
+
+var assistantKeys = &assistantKeyCache{entries: map[[32]byte]verifiedKey{}}
+
+func assistantCacheKey(address, key string) [32]byte {
+	return sha256.Sum256([]byte(address + "\x00" + key))
+}
+
+func (c *assistantKeyCache) verified(address, key, hash string) bool {
+	id := assistantCacheKey(address, key)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.entries[id]
+	if !ok || time.Now().After(e.until) || subtle.ConstantTimeCompare([]byte(e.hash), []byte(hash)) != 1 {
+		delete(c.entries, id)
+		return false
+	}
+	return true
+}
+
+func (c *assistantKeyCache) remember(address, key, hash string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.entries) >= 10000 {
+		now := time.Now()
+		for id, e := range c.entries {
+			if now.After(e.until) {
+				delete(c.entries, id)
+			}
+		}
+		if len(c.entries) >= 10000 {
+			c.entries = map[[32]byte]verifiedKey{}
+		}
+	}
+	c.entries[assistantCacheKey(address, key)] = verifiedKey{hash: hash, until: time.Now().Add(assistantKeyCacheTTL)}
+}
+
 // assistantPrincipal authenticates HTTP Basic (mailbox address, hm_ai_ key).
 // Session tokens, API keys and account passwords are never accepted here.
 func (s *Server) assistantPrincipal(w http.ResponseWriter, r *http.Request) (mailauth.Principal, bool) {
 	address, key, ok := r.BasicAuth()
 	address = strings.ToLower(strings.TrimSpace(address))
 	ctx := r.Context()
-	if ok && strings.HasPrefix(key, mailauth.AssistantKeyPrefix) && mailauth.Allow(ctx, s.limiter, "assistant", clientIP(r), address) {
-		if p, ok := mailauth.Login(ctx, s.pool, address, key, mailauth.Assistant); ok {
+	if ok && strings.HasPrefix(key, mailauth.AssistantKeyPrefix) {
+		// A key verified recently skips bcrypt and the login limiter, so an MCP client
+		// making many calls is not locked out; the fresh lookup still sees revocation.
+		if p, err := mailauth.Lookup(ctx, s.pool, address, mailauth.Assistant); err == nil && assistantKeys.verified(address, key, p.Hash) {
 			return p, true
+		}
+		if mailauth.Allow(ctx, s.limiter, "assistant", clientIP(r), address) {
+			if p, ok := mailauth.Login(ctx, s.pool, address, key, mailauth.Assistant); ok {
+				assistantKeys.remember(address, key, p.Hash)
+				return p, true
+			}
 		}
 	}
 	w.Header().Set("WWW-Authenticate", `Basic realm="heromail-assistant"`)

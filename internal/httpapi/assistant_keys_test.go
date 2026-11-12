@@ -256,6 +256,12 @@ func TestAssistantCalendar(t *testing.T) {
 	if list.Code != 200 || !strings.Contains(list.Body.String(), "Созвон") {
 		t.Fatalf("list: %d %s", list.Code, list.Body)
 	}
+	// An MCP client calls many times in a row: more than the 30-login limit must pass.
+	for i := 0; i < 40; i++ {
+		if rec := call("GET", "/assistant/me", "", issued.Key); rec.Code != 200 {
+			t.Fatalf("repeated call %d: %d", i, rec.Code)
+		}
+	}
 	if rec := call("GET", "/workspaces/"+slug+"/calendar/rooms", "", issued.Key); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"rooms"`) {
 		t.Fatalf("rooms: %d %s", rec.Code, rec.Body)
 	}
@@ -280,5 +286,15 @@ func TestAssistantCalendar(t *testing.T) {
 	}
 	if rec := call("POST", "/assistant/invite-reply", `{"uid":4294967000,"response":"accepted"}`, issued.Key); rec.Code != 404 {
 		t.Fatalf("foreign uid: %d", rec.Code)
+	}
+	// Rotation revokes the old key at once despite the verified-key cache.
+	r = h.do("PUT", "/assistant-keys/"+box.ID, "", token)
+	var rotated struct{ Key string }
+	json.Unmarshal(r.Body.Bytes(), &rotated)
+	if rec := call("GET", "/assistant/me", "", issued.Key); rec.Code != 401 {
+		t.Fatalf("rotated key still accepted: %d", rec.Code)
+	}
+	if rec := call("GET", "/assistant/me", "", rotated.Key); rec.Code != 200 {
+		t.Fatalf("new key: %d", rec.Code)
 	}
 }
