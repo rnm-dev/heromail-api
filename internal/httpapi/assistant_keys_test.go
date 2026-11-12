@@ -256,6 +256,18 @@ func TestAssistantCalendar(t *testing.T) {
 	if list.Code != 200 || !strings.Contains(list.Body.String(), "Созвон") {
 		t.Fatalf("list: %d %s", list.Code, list.Body)
 	}
+	if rec := call("GET", "/workspaces/"+slug+"/calendar/rooms", "", issued.Key); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"rooms"`) {
+		t.Fatalf("rooms: %d %s", rec.Code, rec.Body)
+	}
+	if rec := call("POST", "/workspaces/"+slug+"/calendar/rooms", `{"name":"A","capacity":4}`, issued.Key); rec.Code != 401 {
+		t.Fatalf("room create must stay session-only: %d", rec.Code)
+	}
+	if rec := call("GET", "/workspaces/"+slug+"/calendar/busy?from=2026-11-20&to=2026-11-21", "", issued.Key); rec.Code != 200 || !strings.Contains(rec.Body.String(), "2026-11-20T05:00:00Z") {
+		t.Fatalf("busy: %d %s", rec.Code, rec.Body)
+	}
+	if rec := call("GET", "/workspaces/"+otherSlug+"/calendar/busy?from=2026-11-20&to=2026-11-21", "", issued.Key); rec.Code != 403 {
+		t.Fatalf("busy other workspace: %d", rec.Code)
+	}
 	raw := []byte("From: a@example.test\r\nTo: " + box.Address + "\r\nSubject: hi\r\n\r\nno invite\r\n")
 	msg, err := store.Deliver(ctx, inbound.DeliverParams{MailboxID: box.ID, EnvelopeFrom: "a@example.test", EnvelopeTo: box.Address, Raw: raw})
 	if err != nil {

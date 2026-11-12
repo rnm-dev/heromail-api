@@ -12,12 +12,22 @@ import (
 
 // Calendar routes an assistant key may call, acting as its issuer. The key is
 // bound to one mailbox, so it is confined to that mailbox's workspace.
+var assistantRoomsPath = regexp.MustCompile(`^/workspaces/([^/]+)/calendar/rooms$`)
 var assistantCalendarPath = regexp.MustCompile(`^/workspaces/([^/]+)/calendar(/events(/[0-9a-fA-F-]{36})?)?$`)
 
 // AssistantCalendar wraps the generated handler for calendar paths called with an
 // assistant key; it returns false when the request is not one, leaving it to sessions.
 func (s *Server) assistantCalendar(accounts *account.Service, generated http.Handler, w http.ResponseWriter, r *http.Request) bool {
+	handler := generated
 	m := assistantCalendarPath.FindStringSubmatch(r.URL.Path)
+	if m == nil && r.Method == http.MethodGet {
+		// Read-only extras: meeting rooms and busy times (own, colleagues', rooms).
+		if m = assistantRoomsPath.FindStringSubmatch(r.URL.Path); m != nil {
+			handler = http.HandlerFunc(s.calendarRooms)
+		} else if m = calendarBusyPath.FindStringSubmatch(r.URL.Path); m != nil {
+			handler = http.HandlerFunc(s.calendarBusy)
+		}
+	}
 	if m == nil {
 		return false
 	}
@@ -38,7 +48,7 @@ func (s *Server) assistantCalendar(accounts *account.Service, generated http.Han
 		writeErrorEnvelope(w, http.StatusUnauthorized, "unauthenticated", "invalid assistant key")
 		return true
 	}
-	generated.ServeHTTP(w, account.WithUser(r, user))
+	handler.ServeHTTP(w, account.WithUser(r, user))
 	return true
 }
 
