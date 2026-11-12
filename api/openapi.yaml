@@ -1004,6 +1004,74 @@ paths:
           description: No registration remains for this session
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /me/notification-settings:
+    get:
+      tags: [auth]
+      operationId: getNotificationSettings
+      summary: The signed-in user's push notification settings
+      description: |
+        Lists every mailbox the user can read, with defaults for mailboxes
+        never configured. A user who has never saved anything gets version 0
+        and the defaults:
+
+        * `enabled: true`, `privacy: false`, no `quiet_hours`;
+        * per mailbox: `enabled: true`, `categories: [people]`,
+          `starred_only: false`.
+
+        These settings decide only the visible new-mail push. The silent
+        `type: sync` push is never muted, so the app stays in sync and the
+        badge stays right even for a muted mailbox.
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: Current settings
+          headers:
+            ETag:
+              schema: { type: string }
+              description: '`"<version>"`; send it back as `If-Match`.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationSettings' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    put:
+      tags: [auth]
+      operationId: saveNotificationSettings
+      summary: Replace the global switches and update the listed mailboxes
+      description: |
+        Optimistic: `version` must be the version last read (`If-Match`, when
+        sent, must agree with it). Global fields are replaced; `quiet_hours`
+        absent or null turns quiet hours off. Mailboxes not listed keep their
+        settings. A mailbox the user cannot read is `404`. Resending the write
+        that produced the current version is not a conflict.
+      security: [{ session: [] }]
+      parameters:
+        - name: If-Match
+          in: header
+          required: false
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationSettingsUpdate' }
+      responses:
+        '200':
+          description: Saved
+          headers:
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationSettings' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: '`version_conflict` — changed on another device; GET and reapply'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /workspaces:
     get:
       tags: [workspaces]
@@ -2701,6 +2769,86 @@ components:
         label_ids:
           type: array
           items: { type: string, format: uuid }
+
+    QuietHours:
+      type: object
+      nullable: true
+      required: [start, end, timezone]
+      description: |
+        Local wall-clock window in `timezone` during which no visible push is
+        sent (silent sync pushes still are). `start` later than `end` wraps
+        midnight, e.g. 22:00–08:00.
+      properties:
+        start: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', example: '22:00' }
+        end: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', example: '08:00' }
+        timezone: { type: string, maxLength: 64, example: Asia/Almaty }
+
+    MailboxNotificationSettings:
+      type: object
+      required: [mailbox_id, address, workspace, enabled, categories, starred_only]
+      properties:
+        mailbox_id: { type: string, format: uuid }
+        address: { type: string, format: email }
+        workspace:
+          type: string
+          description: Workspace slug the mailbox is reached under.
+        enabled: { type: boolean, default: true }
+        categories:
+          type: array
+          description: Smart-inbox categories that notify. Default `[people]`; empty = none.
+          items: { $ref: '#/components/schemas/MessageCategory' }
+        starred_only:
+          type: boolean
+          default: false
+          description: Only messages starred on arrival, i.e. by an automation rule.
+
+    NotificationSettings:
+      type: object
+      required: [version, enabled, privacy, mailboxes]
+      properties:
+        version: { type: integer, minimum: 0 }
+        enabled:
+          type: boolean
+          default: true
+          description: Global switch for visible new-mail pushes.
+        privacy:
+          type: boolean
+          default: false
+          description: Hide subject and preview; the notification shows the sender and "Новое письмо".
+        quiet_hours: { $ref: '#/components/schemas/QuietHours' }
+        mailboxes:
+          type: array
+          items: { $ref: '#/components/schemas/MailboxNotificationSettings' }
+
+    MailboxNotificationUpdate:
+      type: object
+      required: [mailbox_id, enabled, categories, starred_only]
+      additionalProperties: false
+      properties:
+        mailbox_id: { type: string, format: uuid }
+        enabled: { type: boolean }
+        categories:
+          type: array
+          maxItems: 3
+          items: { $ref: '#/components/schemas/MessageCategory' }
+        starred_only: { type: boolean }
+
+    NotificationSettingsUpdate:
+      type: object
+      required: [version, enabled, privacy]
+      additionalProperties: false
+      properties:
+        version:
+          type: integer
+          minimum: 0
+          description: The version last read.
+        enabled: { type: boolean }
+        privacy: { type: boolean }
+        quiet_hours: { $ref: '#/components/schemas/QuietHours' }
+        mailboxes:
+          type: array
+          maxItems: 500
+          items: { $ref: '#/components/schemas/MailboxNotificationUpdate' }
 
     DeviceSessionList:
       type: object

@@ -60,10 +60,17 @@ type Notifier struct {
 	inbound *inbound.Store
 	devices *Store
 	sender  Sender
+	now     func() time.Time // quiet hours are judged against this; tests pin it
 }
 
 func NewNotifier(pool *pgxpool.Pool, sender Sender) *Notifier {
-	return &Notifier{pool: pool, inbound: inbound.NewStore(pool), devices: NewStore(pool), sender: sender}
+	return &Notifier{pool: pool, inbound: inbound.NewStore(pool), devices: NewStore(pool), sender: sender, now: time.Now}
+}
+
+// WithClock replaces the clock quiet hours are checked against.
+func (n *Notifier) WithClock(now func() time.Time) *Notifier {
+	n.now = now
+	return n
 }
 
 // HandleNewMessageTask is the asynq handler for TypeNewMessage.
@@ -77,9 +84,10 @@ func (n *Notifier) HandleNewMessageTask(ctx context.Context, task *asynq.Task) e
 
 // shouldNotify is decided when the task runs, not when it is queued, so it
 // sees the message after spam routing and automation rules: anything that left
-// the Inbox, was read, or is not from a person stays quiet.
+// the Inbox or was read stays quiet for everyone. Category, starred-only and
+// quiet hours are each reader's own settings (delivery.wants).
 func shouldNotify(m *inbound.Message) bool {
-	return m.Folder == "INBOX" && m.ReadAt == nil && m.Category == "people"
+	return m.Folder == "INBOX" && m.ReadAt == nil
 }
 
 // NotifyNewMessage sends the visible notification for one delivered message
@@ -98,23 +106,34 @@ func (n *Notifier) NotifyNewMessage(ctx context.Context, messageID string) error
 	if !shouldNotify(m) {
 		return nil
 	}
-	return n.fanOut(ctx, m.MailboxID, func(slug string, badge int) func(token string) fcm.Message {
-		return func(token string) fcm.Message { return NewMessagePush(token, slug, m, badge) }
+	now := n.now()
+	return n.fanOut(ctx, m.MailboxID, func(user, slug string) (func(string, int) fcm.Message, error) {
+		d, err := n.devices.deliverySettings(ctx, user, m.MailboxID)
+		if err != nil || !d.wants(m, now) {
+			return nil, err
+		}
+		return func(token string, badge int) fcm.Message {
+			return NewMessagePush(token, slug, m, badge, d.privacy)
+		}, nil
 	})
 }
 
 // NotifyMailboxChanged sends a silent push so the app pulls /changes and
 // updates its badge: a message was read, moved or deleted somewhere else.
+// Notification settings do not apply: it shows nothing, and a muted mailbox
+// still has to stay in sync.
 func (n *Notifier) NotifyMailboxChanged(ctx context.Context, mailboxID string) error {
 	if n.sender == nil {
 		return nil
 	}
-	return n.fanOut(ctx, mailboxID, func(slug string, badge int) func(token string) fcm.Message {
-		return func(token string) fcm.Message { return SyncPush(token, slug, mailboxID, badge) }
+	return n.fanOut(ctx, mailboxID, func(_, slug string) (func(string, int) fcm.Message, error) {
+		return func(token string, badge int) fcm.Message { return SyncPush(token, slug, mailboxID, badge) }, nil
 	})
 }
 
-func (n *Notifier) fanOut(ctx context.Context, mailboxID string, build func(slug string, badge int) func(string) fcm.Message) error {
+// fanOut asks build, per reader, for a message constructor; nil skips that
+// reader.
+func (n *Notifier) fanOut(ctx context.Context, mailboxID string, build func(user, slug string) (func(token string, badge int) fcm.Message, error)) error {
 	slug, users, err := n.inbound.MailboxReaders(ctx, mailboxID)
 	if err != nil {
 		return err
@@ -127,16 +146,22 @@ func (n *Notifier) fanOut(ctx context.Context, mailboxID string, build func(slug
 		if len(targets) == 0 {
 			continue
 		}
+		msgFor, err := build(user, slug)
+		if err != nil {
+			return err
+		}
+		if msgFor == nil {
+			continue
+		}
 		counts, err := n.inbound.UnreadCounts(ctx, user, nil)
 		if err != nil {
 			return err
 		}
-		msgFor := build(slug, counts["INBOX"])
 		for _, t := range targets {
 			// Per-token failures never fail the task: the client already
 			// retried transient errors, and a task retry would re-notify the
 			// devices that did get it.
-			err := n.sender.Send(ctx, msgFor(t.Token))
+			err := n.sender.Send(ctx, msgFor(t.Token, counts["INBOX"]))
 			switch {
 			case errors.Is(err, fcm.ErrUnregistered):
 				if err := n.devices.DisableToken(ctx, t.Token); err != nil {
@@ -151,8 +176,9 @@ func (n *Notifier) fanOut(ctx context.Context, mailboxID string, build func(slug
 }
 
 // NewMessagePush is the visible notification. `data` carries exactly the
-// routing keys the app opens the message with.
-func NewMessagePush(token, slug string, m *inbound.Message, badge int) fcm.Message {
+// routing keys the app opens the message with. privacy hides the subject and
+// preview; the sender stays.
+func NewMessagePush(token, slug string, m *inbound.Message, badge int, privacy bool) fcm.Message {
 	title := strings.TrimSpace(deref(m.FromName))
 	if title == "" {
 		title = strings.TrimSpace(deref(m.FromAddr))
@@ -166,6 +192,9 @@ func NewMessagePush(token, slug string, m *inbound.Message, badge int) fcm.Messa
 	}
 	if p := preview(deref(m.TextBody), 140); p != "" {
 		body += "\n" + p
+	}
+	if privacy {
+		body = "Новое письмо"
 	}
 	return fcm.Message{
 		Token:        token,
