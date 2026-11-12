@@ -152,6 +152,9 @@ func (d *Dispatcher) process(ctx context.Context, j job) error {
 	if err != nil {
 		return err
 	}
+	if e.RoomID != "" {
+		e = withRoom(e, d.store.roomNames(ctx, ws))
+	}
 	var allowed bool
 	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM mailboxes m JOIN domains dom ON dom.id=m.domain_id
 		JOIN workspaces w ON w.id=coalesce(m.personal_workspace_id,dom.workspace_id)

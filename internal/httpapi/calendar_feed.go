@@ -102,6 +102,19 @@ func (s *Server) calendarBusy(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	busy, err := calendar.NewStore(s.pool).BusyTimes(r.Context(), ws, user.ID, from, to, q.Get("exclude"), emails)
+	if err == nil && q.Get("rooms") != "" {
+		store := calendar.NewStore(s.pool)
+		var settings calendar.Settings
+		if settings, err = store.Settings(r.Context(), ws, user.ID, nil); err == nil {
+			zone, _ := calendar.Zone(settings.Timezone)
+			var rooms map[string][]calendar.Busy
+			if rooms, err = store.RoomBusy(r.Context(), ws, strings.Split(q.Get("rooms"), ","), from, to, zone); err == nil {
+				for k, v := range rooms {
+					busy[k] = v
+				}
+			}
+		}
+	}
 	var verr calendar.ValidationError
 	if errors.As(err, &verr) {
 		writeErrorEnvelope(w, http.StatusBadRequest, "validation_failed", verr.Message)
@@ -253,4 +266,61 @@ func (s *Server) calendarSharedEvents(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"events": events, "has_more": more})
 	}
+}
+
+var calendarRoomsPath = regexp.MustCompile(`^/workspaces/([^/]+)/calendar/rooms(?:/([0-9a-fA-F-]{36}))?$`)
+
+// calendarRooms serves GET (members) and POST, DELETE /{id} (admins) of meeting rooms.
+func (s *Server) calendarRooms(w http.ResponseWriter, r *http.Request) {
+	m := calendarRoomsPath.FindStringSubmatch(r.URL.Path)
+	role := workspace.RoleMember
+	if r.Method != http.MethodGet {
+		role = workspace.RoleAdmin
+	}
+	ws, forbidden, err := s.scope(r.Context(), m[1], role)
+	if forbidden {
+		writeErrorEnvelope(w, http.StatusForbidden, "forbidden", "only workspace admins manage rooms")
+		return
+	}
+	if err != nil {
+		writeErrorEnvelope(w, http.StatusNotFound, "not_found", "workspace not found")
+		return
+	}
+	store := calendar.NewStore(s.pool)
+	switch {
+	case r.Method == http.MethodPost && m[2] == "":
+		var body struct {
+			Name     string `json:"name"`
+			Capacity int    `json:"capacity"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&body); err != nil {
+			writeErrorEnvelope(w, http.StatusBadRequest, "invalid_json", "a JSON body is required")
+			return
+		}
+		err = store.CreateRoom(r.Context(), ws, body.Name, body.Capacity)
+	case r.Method == http.MethodDelete && m[2] != "":
+		err = store.DeleteRoom(r.Context(), ws, strings.ToLower(m[2]))
+	case r.Method != http.MethodGet || m[2] != "":
+		writeErrorEnvelope(w, http.StatusMethodNotAllowed, "method_not_allowed", "use GET, POST or DELETE")
+		return
+	}
+	var verr calendar.ValidationError
+	switch {
+	case errors.As(err, &verr):
+		writeErrorEnvelope(w, http.StatusBadRequest, "validation_failed", verr.Message)
+		return
+	case errors.Is(err, calendar.ErrNotFound):
+		writeErrorEnvelope(w, http.StatusNotFound, "not_found", "room not found")
+		return
+	case err != nil:
+		writeErrorEnvelope(w, http.StatusInternalServerError, "internal", "internal server error")
+		return
+	}
+	rooms, err := store.Rooms(r.Context(), ws)
+	if err != nil {
+		writeErrorEnvelope(w, http.StatusInternalServerError, "internal", "internal server error")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"rooms": rooms})
 }

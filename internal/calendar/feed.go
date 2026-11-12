@@ -70,10 +70,12 @@ func (s *Store) Feed(ctx context.Context, token string, now time.Time) (string, 
 		}
 		day = day.AddDate(0, 0, 85)
 	}
+	rooms := s.roomNames(ctx, ws)
 	stamp := now.UTC().Format("20060102T150405Z")
 	lines := []string{"BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Heromail//Calendar//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
 		"X-WR-CALNAME:Heromail", "X-WR-TIMEZONE:" + zone, "REFRESH-INTERVAL;VALUE=DURATION:PT15M", "X-PUBLISHED-TTL:PT15M"}
 	for _, e := range events {
+		e = withRoom(e, rooms)
 		lines = append(lines, "BEGIN:VEVENT", "UID:"+e.UID, "DTSTAMP:"+stamp, fmt.Sprintf("SEQUENCE:%d", e.Sequence),
 			"SUMMARY:"+icsEscape(e.Title))
 		if e.AllDay {
