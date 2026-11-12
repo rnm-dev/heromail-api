@@ -182,9 +182,14 @@ func (s *Server) ListMessages(ctx context.Context, request ListMessagesRequestOb
 		return nil, err
 	}
 
+	compact := request.Params.Compact != nil && *request.Params.Compact
 	out := make([]ReceivedMessage, 0, len(msgs))
 	for i := range msgs {
-		out = append(out, receivedMessageToAPI(&msgs[i]))
+		card := receivedMessageToAPI(&msgs[i])
+		if compact {
+			card.Text, card.Html = nil, nil
+		}
+		out = append(out, card)
 	}
 	return ListMessages200JSONResponse{Messages: out}, nil
 }
@@ -261,6 +266,7 @@ func mailboxToAPI(m *inbound.Mailbox) Mailbox {
 
 func receivedMessageToAPI(m *inbound.Message) ReceivedMessage {
 	return ReceivedMessage{
+		Snippet:      inbound.Snippet(m),
 		Starred:      &m.Starred,
 		Folder:       m.Folder,
 		Category:     MessageCategory(m.Category),

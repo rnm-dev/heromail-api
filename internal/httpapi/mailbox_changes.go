@@ -60,6 +60,9 @@ func (s *Server) ListMailboxChanges(ctx context.Context, request ListMailboxChan
 		card := receivedMessageToAPI(&c.Message)
 		// Compact: the HTML part is fetched when the message is opened.
 		card.Html = nil
+		if request.Params.Compact != nil && *request.Params.Compact {
+			card.Text = nil
+		}
 		labels := make([]openapi_types.UUID, 0, len(c.LabelIDs))
 		for _, id := range c.LabelIDs {
 			labels = append(labels, mustUUID(id))

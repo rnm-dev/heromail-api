@@ -24,7 +24,17 @@ func writeErrorEnvelope(w http.ResponseWriter, status int, code, message string)
 
 type ctxKey int
 
-const requestContextKey ctxKey = iota
+const (
+	requestContextKey ctxKey = iota
+	httpRequestKey
+)
+
+// httpRequestFrom returns the incoming request for the few operations that
+// need its headers (Range on downloads); nil outside a request.
+func httpRequestFrom(ctx context.Context) *http.Request {
+	r, _ := ctx.Value(httpRequestKey).(*http.Request)
+	return r
+}
 
 // Router builds the full HTTP handler: CORS, then per-prefix authentication,
 // then the generated router.
@@ -131,7 +141,9 @@ func withRequestContext(next http.Handler) http.Handler {
 			HeaderClient:     r.Header.Get("X-Client"),
 			HeaderAppVersion: r.Header.Get("X-App-Version"),
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestContextKey, rc)))
+		ctx := context.WithValue(r.Context(), requestContextKey, rc)
+		ctx = context.WithValue(ctx, httpRequestKey, r)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -152,7 +164,8 @@ func clientIP(r *http.Request) string {
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, If-Match, X-Client, X-App-Version")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, If-Match, If-None-Match, If-Range, Range, X-Client, X-App-Version")
+		w.Header().Set("Access-Control-Expose-Headers", "Content-Disposition, Content-Range, Accept-Ranges, ETag, Retry-After")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

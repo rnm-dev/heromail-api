@@ -20,6 +20,27 @@ type ReceivedAttachment struct {
 	ID       string `json:"id"`
 	Filename string `json:"filename"`
 	Size     int64  `json:"size_bytes"`
+	// ContentType is the part's declared media type, as the sender wrote it.
+	// Downloads only pass it on when it is safe (DownloadContentType).
+	ContentType string `json:"-"`
+}
+
+// downloadableTypes may be served as themselves; anything else, and above all
+// text/html and image/svg+xml, which a browser would render as active content
+// on the API origin, goes out as application/octet-stream.
+var downloadableTypes = map[string]bool{
+	"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true,
+	"image/heic": true, "image/heif": true, "application/pdf": true,
+	"text/plain": true, "text/calendar": true,
+}
+
+// DownloadContentType is the Content-Type to serve the attachment with.
+func (a ReceivedAttachment) DownloadContentType() string {
+	t := strings.ToLower(a.ContentType)
+	if downloadableTypes[t] || strings.HasPrefix(t, "video/") || strings.HasPrefix(t, "audio/") {
+		return t
+	}
+	return "application/octet-stream"
 }
 
 // Attachment parts are decoded from the immutable source. IDs are bounded MIME
@@ -105,7 +126,7 @@ func ScanAttachments(raw []byte, selected string) (items []ReceivedAttachment, d
 			incomplete = true
 			return
 		}
-		items = append(items, ReceivedAttachment{ID: id, Filename: name, Size: size})
+		items = append(items, ReceivedAttachment{ID: id, Filename: name, Size: size, ContentType: contentType})
 	}
 	walk(textproto.MIMEHeader(root.Header), root.Body, 0)
 	return

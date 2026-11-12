@@ -1850,6 +1850,10 @@ paths:
         - name: limit
           in: query
           schema: { type: integer, minimum: 1, maximum: 500, default: 200 }
+        - name: compact
+          in: query
+          description: Also omit `text` (html is never included here); use `snippet`.
+          schema: { type: boolean, default: false }
       responses:
         '200':
           description: A page of changes
@@ -1906,6 +1910,13 @@ paths:
         - name: offset
           in: query
           schema: { type: integer, minimum: 0, default: 0 }
+        - name: compact
+          in: query
+          description: |
+            Omit `text` and `html` from each message and rely on `snippet` —
+            for lists on mobile. Default false keeps the full bodies the web
+            client renders from.
+          schema: { type: boolean, default: false }
       responses:
         '200':
           description: Messages
@@ -1965,10 +1976,25 @@ paths:
       - { name: attachmentId, in: path, required: true, schema: { type: string, pattern: '^[0-9]{1,3}$' } }
     get:
       operationId: downloadReceivedAttachment
+      description: |
+        Decoded attachment bytes, always `Content-Disposition: attachment`.
+        `Content-Type` is the part's declared type when it is passive content
+        (images incl. HEIC, PDF, audio, video, plain text, calendar), else
+        `application/octet-stream`. Supports `Range` (single and multiple
+        ranges → `206`, unsatisfiable → `416`), `If-Range` and
+        `If-None-Match` against the `ETag` (stable: messages are immutable),
+        and `HEAD`. `Accept-Ranges: bytes` is always sent.
       security: [{ session: [] }]
+      parameters:
+        - { name: Range, in: header, required: false, schema: { type: string, example: 'bytes=0-1048575' } }
       responses:
         '200':
           description: Decoded attachment bytes, forced download
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '206':
+          description: The requested byte range(s)
           content:
             application/octet-stream:
               schema: { type: string, format: binary }
@@ -3236,11 +3262,17 @@ components:
       description: Smart inbox category; sorts the web Inbox into tabs.
     ReceivedMessage:
       type: object
-      required: [id, mailbox_id, subject, size_bytes, received_at, folder, category]
+      required: [id, mailbox_id, subject, snippet, size_bytes, received_at, folder, category]
       description: |
         `raw` is deliberately absent: the source of a message can be megabytes,
         and no view that lists subjects needs it.
       properties:
+        snippet:
+          type: string
+          description: |
+            Up to 200 characters of the text, whitespace collapsed (from the
+            HTML part, tags stripped, when there is no text part). Always
+            present; with `compact=true` it replaces `text` and `html`.
         to:
           type: array
           items: { type: string }
