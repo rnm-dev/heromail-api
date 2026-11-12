@@ -169,7 +169,66 @@ func (e ExternalInvite) Times(fallback *time.Location) (in Input, start, end tim
 	if in.Exdates == nil || in.RRule == "" {
 		in.Exdates = []string{}
 	}
+	overrides := []Override{}
+	if in.RRule != "" {
+		for _, inst := range e.instances {
+			if o, ok := inst.Override(in, fallback); ok && len(overrides) < 200 {
+				overrides = append(overrides, o)
+			}
+		}
+	}
+	in.Overrides = &overrides
 	return in, start, end, nil
+}
+
+// Occurrence is the original date (in the series zone) a changed occurrence
+// replaces, from its RECURRENCE-ID.
+func (e ExternalInvite) Occurrence(series Input, fallback *time.Location) (string, bool) {
+	v := strings.TrimSpace(e.recurrenceID.value)
+	if len(v) < 8 {
+		return "", false
+	}
+	if series.AllDay || len(v) == 8 {
+		d, err := time.Parse("20060102", v[:8])
+		return d.Format("2006-01-02"), err == nil
+	}
+	var t time.Time
+	var err error
+	if strings.HasSuffix(v, "Z") {
+		t, err = time.Parse("20060102T150405Z", v)
+	} else {
+		loc, _ := e.zoneFor(paramValue(e.recurrenceID.params, "TZID"), fallback)
+		t, err = time.ParseInLocation("20060102T150405", v, loc)
+	}
+	loc, zerr := Zone(series.Timezone)
+	if err != nil || zerr != nil {
+		return "", false
+	}
+	return t.In(loc).Format("2006-01-02"), true
+}
+
+// Override converts a changed occurrence into an override of the series.
+func (e ExternalInvite) Override(series Input, fallback *time.Location) (Override, bool) {
+	day, ok := e.Occurrence(series, fallback)
+	if !ok {
+		return Override{}, false
+	}
+	in, start, end, err := e.Times(fallback)
+	if err != nil || in.AllDay != series.AllDay {
+		return Override{}, false
+	}
+	o := Override{Occurrence: day, Title: in.Title, Location: in.Location, Description: in.Description}
+	if in.AllDay {
+		o.Start, o.End = in.Start, in.End
+	} else {
+		loc, err := Zone(series.Timezone)
+		if err != nil {
+			return Override{}, false
+		}
+		a, b := start.UTC(), end.UTC()
+		o.Start, o.End, o.StartAt, o.EndAt = a.In(loc).Format(wallLayout), b.In(loc).Format(wallLayout), &a, &b
+	}
+	return o, true
 }
 
 func truncateRunes(s string, n int) string {
@@ -212,12 +271,12 @@ func (s *Store) SaveExternal(ctx context.Context, ws, user, messageID, attendee,
 	} else {
 		startAt, endAt = start, end
 	}
-	_, err = s.pool.Exec(ctx, `INSERT INTO calendar_external_events(calendar_id,uid,sequence,message_id,attendee,response,organizer_email,title,description,location,timezone,all_day,start_at,end_at,start_date,end_date,rrule,exdates,series_until)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::date,$16::date,$17,$18,$19)
+	_, err = s.pool.Exec(ctx, `INSERT INTO calendar_external_events(calendar_id,uid,sequence,message_id,attendee,response,organizer_email,title,description,location,timezone,all_day,start_at,end_at,start_date,end_date,rrule,exdates,series_until,overrides)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::date,$16::date,$17,$18,$19,$20)
 		ON CONFLICT(calendar_id,uid) DO UPDATE SET sequence=EXCLUDED.sequence,message_id=EXCLUDED.message_id,attendee=EXCLUDED.attendee,response=EXCLUDED.response,
 		organizer_email=EXCLUDED.organizer_email,title=EXCLUDED.title,description=EXCLUDED.description,location=EXCLUDED.location,timezone=EXCLUDED.timezone,
-		all_day=EXCLUDED.all_day,start_at=EXCLUDED.start_at,end_at=EXCLUDED.end_at,start_date=EXCLUDED.start_date,end_date=EXCLUDED.end_date,rrule=EXCLUDED.rrule,exdates=EXCLUDED.exdates,series_until=EXCLUDED.series_until,updated_at=now()
+		all_day=EXCLUDED.all_day,start_at=EXCLUDED.start_at,end_at=EXCLUDED.end_at,start_date=EXCLUDED.start_date,end_date=EXCLUDED.end_date,rrule=EXCLUDED.rrule,exdates=EXCLUDED.exdates,series_until=EXCLUDED.series_until,overrides=EXCLUDED.overrides,updated_at=now()
 		WHERE calendar_external_events.sequence<=EXCLUDED.sequence`,
-		cal, invite.UID, seq, messageID, strings.ToLower(attendee), response, in.Organizer, in.Title, in.Description, in.Location, in.Timezone, in.AllDay, startAt, endAt, startDate, endDate, in.RRule, in.Exdates, until)
+		cal, invite.UID, seq, messageID, strings.ToLower(attendee), response, in.Organizer, in.Title, in.Description, in.Location, in.Timezone, in.AllDay, startAt, endAt, startDate, endDate, in.RRule, in.Exdates, until, encodeOverrides(in))
 	return err
 }

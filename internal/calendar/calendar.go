@@ -44,6 +44,9 @@ type Input struct {
 	Exdates []string `json:"exdates"`
 	// Color is a label from a fixed palette, "" for the default.
 	Color string `json:"color"`
+	// Overrides are changed single occurrences of a series; nil on input
+	// keeps the stored ones.
+	Overrides *[]Override `json:"overrides,omitempty"`
 }
 type Attendee struct {
 	Email    string `json:"email"`
@@ -69,9 +72,13 @@ type Event struct {
 	Notifications []Notification `json:"notifications"`
 	// Occurrence is set on one expanded instance of a repeating event: its
 	// date. SeriesStart/SeriesEnd are then the series' own start and end.
-	Occurrence  string     `json:"occurrence,omitempty"`
-	SeriesStart string     `json:"series_start,omitempty"`
-	SeriesEnd   string     `json:"series_end,omitempty"`
+	Occurrence  string `json:"occurrence,omitempty"`
+	SeriesStart string `json:"series_start,omitempty"`
+	SeriesEnd   string `json:"series_end,omitempty"`
+	// Master is the series an occurrence belongs to, for editing it or one
+	// occurrence; Overridden marks an occurrence changed on its own.
+	Master      *Input     `json:"master,omitempty"`
+	Overridden  bool       `json:"overridden,omitempty"`
 	UpdatedAt   time.Time  `json:"-"`
 	seriesAt    *time.Time // series start instant, for the feed
 	seriesEndAt *time.Time
@@ -213,7 +220,7 @@ func (s *Store) Settings(ctx context.Context, ws, user string, zone *string) (Se
 	return out, err
 }
 
-const columns = `e.id,e.title,e.description,e.location,e.timezone,e.all_day,e.start_at,e.end_at,e.start_date::text,e.end_date::text,e.version,e.organizer_email,e.uid,e.sequence,e.status,e.reminder_minutes,e.updated_at,e.rrule,e.exdates,e.color`
+const columns = `e.id,e.title,e.description,e.location,e.timezone,e.all_day,e.start_at,e.end_at,e.start_date::text,e.end_date::text,e.version,e.organizer_email,e.uid,e.sequence,e.status,e.reminder_minutes,e.updated_at,e.rrule,e.exdates,e.color,e.overrides`
 
 func scan(row pgx.Row) (Event, error) {
 	return scanRecord(row, false)
@@ -222,7 +229,8 @@ func scanList(row pgx.Row) (Event, error) { return scanRecord(row, true) }
 func scanRecord(row pgx.Row, list bool) (Event, error) {
 	var out Event
 	var start, end *string
-	dest := []any{&out.ID, &out.Title, &out.Description, &out.Location, &out.Timezone, &out.AllDay, &out.StartAt, &out.EndAt, &start, &end, &out.Version, &out.Organizer, &out.UID, &out.Sequence, &out.Status, &out.ReminderMinutes, &out.UpdatedAt, &out.RRule, &out.Exdates, &out.Color}
+	var overrides []byte
+	dest := []any{&out.ID, &out.Title, &out.Description, &out.Location, &out.Timezone, &out.AllDay, &out.StartAt, &out.EndAt, &start, &end, &out.Version, &out.Organizer, &out.UID, &out.Sequence, &out.Status, &out.ReminderMinutes, &out.UpdatedAt, &out.RRule, &out.Exdates, &out.Color, &overrides}
 	var recipient, response string
 	var sortAt time.Time
 	if list {
@@ -233,6 +241,9 @@ func scanRecord(row pgx.Row, list bool) (Event, error) {
 		return out, ErrNotFound
 	}
 	if err != nil {
+		return out, err
+	}
+	if err = decodeOverrides(overrides, &out.Input); err != nil {
 		return out, err
 	}
 	if list && out.Role == "attendee" {
@@ -281,7 +292,7 @@ func (s *Store) List(ctx context.Context, ws, user, from, to string, offset int)
 		WHERE c.workspace_id=$1 AND c.user_id=$2
 		AND ((e.rrule='' AND ((e.all_day AND e.start_date<$4::date AND e.end_date>$3::date) OR (NOT e.all_day AND e.start_at<$6 AND e.end_at>$5))) OR (e.rrule<>'' AND coalesce(e.start_at,e.start_date::timestamptz)<$6+interval '1 day' AND (e.series_until IS NULL OR e.series_until>$5-interval '1 day')))
 		UNION ALL
-		SELECT x.id,x.title,x.description,x.location,x.timezone,x.all_day,x.start_at,x.end_at,x.start_date::text,x.end_date::text,1,x.organizer_email,x.uid,x.sequence,'confirmed'::text,x.reminder_minutes,x.updated_at,x.rrule,x.exdates,''::text,
+		SELECT x.id,x.title,x.description,x.location,x.timezone,x.all_day,x.start_at,x.end_at,x.start_date::text,x.end_date::text,1,x.organizer_email,x.uid,x.sequence,'confirmed'::text,x.reminder_minutes,x.updated_at,x.rrule,x.exdates,''::text,x.overrides,
 		'attendee'::text,''::text,x.attendee,x.response,coalesce(x.start_at,x.start_date::timestamp AT TIME ZONE 'UTC')
 		FROM calendar_external_events x JOIN calendars c ON c.id=x.calendar_id
 		WHERE c.workspace_id=$1 AND c.user_id=$2
@@ -349,7 +360,10 @@ func (s *Store) Save(ctx context.Context, ws, user, id string, in Input) (Event,
 		if err != nil {
 			return Event{}, err
 		}
-		out, err = scan(tx.QueryRow(ctx, `INSERT INTO calendar_events AS e(calendar_id,title,description,location,timezone,all_day,start_at,end_at,start_date,end_date,organizer_email,reminder_minutes,rrule,exdates,series_until,color) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING `+columns, cal, in.Title, in.Description, in.Location, in.Timezone, in.AllDay, at, until, day, last, in.Organizer, in.ReminderMinutes, in.RRule, in.Exdates, seriesUntil, in.Color))
+		if err = normalizeOverrides(&in, start); err != nil {
+			return Event{}, err
+		}
+		out, err = scan(tx.QueryRow(ctx, `INSERT INTO calendar_events AS e(calendar_id,title,description,location,timezone,all_day,start_at,end_at,start_date,end_date,organizer_email,reminder_minutes,rrule,exdates,series_until,color,overrides) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING `+columns, cal, in.Title, in.Description, in.Location, in.Timezone, in.AllDay, at, until, day, last, in.Organizer, in.ReminderMinutes, in.RRule, in.Exdates, seriesUntil, in.Color, encodeOverrides(in)))
 		if err != nil {
 			return Event{}, err
 		}
@@ -376,15 +390,21 @@ func (s *Store) Save(ctx context.Context, ws, user, id string, in Input) (Event,
 		if len(old.Attendees) > 0 && old.Organizer != in.Organizer {
 			return Event{}, invalid("Нельзя сменить организатора встречи после приглашения")
 		}
+		if in.Overrides == nil {
+			in.Overrides = old.Overrides
+		}
+		if err = normalizeOverrides(&in, start); err != nil {
+			return Event{}, err
+		}
 		// Only a change attendees would see bumps SEQUENCE and re-invites
 		// everyone; only a new time asks them to answer again.
 		retimed := old.AllDay != in.AllDay || old.Start != in.Start || old.End != in.End || old.Timezone != in.Timezone || old.RRule != in.RRule
-		changed = retimed || old.Title != in.Title || old.Description != in.Description || old.Location != in.Location || strings.Join(old.Exdates, ",") != strings.Join(in.Exdates, ",")
+		changed = retimed || old.Title != in.Title || old.Description != in.Description || old.Location != in.Location || strings.Join(old.Exdates, ",") != strings.Join(in.Exdates, ",") || string(encodeOverrides(old.Input)) != string(encodeOverrides(in))
 		bump := 0
 		if changed {
 			bump = 1
 		}
-		out, err = scan(tx.QueryRow(ctx, `UPDATE calendar_events e SET title=$4,description=$5,location=$6,timezone=$7,all_day=$8,start_at=$9,end_at=$10,start_date=$11,end_date=$12,organizer_email=$14,reminder_minutes=$15,rrule=$17,exdates=$18,series_until=$19,color=$20,version=e.version+1,sequence=e.sequence+$16,updated_at=now() FROM calendars c WHERE e.calendar_id=c.id AND c.workspace_id=$1 AND c.user_id=$2 AND e.id=$3 AND e.version=$13 RETURNING `+columns, ws, user, id, in.Title, in.Description, in.Location, in.Timezone, in.AllDay, at, until, day, last, in.Version, in.Organizer, in.ReminderMinutes, bump, in.RRule, in.Exdates, seriesUntil, in.Color))
+		out, err = scan(tx.QueryRow(ctx, `UPDATE calendar_events e SET title=$4,description=$5,location=$6,timezone=$7,all_day=$8,start_at=$9,end_at=$10,start_date=$11,end_date=$12,organizer_email=$14,reminder_minutes=$15,rrule=$17,exdates=$18,series_until=$19,color=$20,overrides=$21,version=e.version+1,sequence=e.sequence+$16,updated_at=now() FROM calendars c WHERE e.calendar_id=c.id AND c.workspace_id=$1 AND c.user_id=$2 AND e.id=$3 AND e.version=$13 RETURNING `+columns, ws, user, id, in.Title, in.Description, in.Location, in.Timezone, in.AllDay, at, until, day, last, in.Version, in.Organizer, in.ReminderMinutes, bump, in.RRule, in.Exdates, seriesUntil, in.Color, encodeOverrides(in)))
 		if err != nil {
 			return Event{}, err
 		}

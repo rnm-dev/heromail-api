@@ -122,3 +122,33 @@ func TestExternalRecurringInvite(t *testing.T) {
 		}
 	}
 }
+
+func TestExternalSeriesWithChangedOccurrence(t *testing.T) {
+	series := strings.Replace(exchangeInvite, "SEQUENCE:2\r\n", "SEQUENCE:2\r\nRRULE:FREQ=WEEKLY;COUNT=4\r\n", 1)
+	instance := "BEGIN:VEVENT\r\nUID:040000008200E0\r\nRECURRENCE-ID;TZID=Qyzylorda Standard Time:20261022T170000\r\nSUMMARY:Перенесено\r\n" +
+		"DTSTART;TZID=Qyzylorda Standard Time:20261023T090000\r\nDTEND;TZID=Qyzylorda Standard Time:20261023T100000\r\nORGANIZER:MAILTO:Organizer@Bank.test\r\nSEQUENCE:2\r\nEND:VEVENT\r\n"
+	invite, err := ParseExternalInvite([]byte(strings.Replace(series, "END:VCALENDAR", instance+"END:VCALENDAR", 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	almaty, _ := time.LoadLocation("Asia/Almaty")
+	in, _, _, err := invite.Times(almaty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in.Overrides == nil || len(*in.Overrides) != 1 {
+		t.Fatalf("overrides: %+v", in.Overrides)
+	}
+	o := (*in.Overrides)[0]
+	if o.Occurrence != "2026-10-22" || o.Title != "Перенесено" || o.Start != "2026-10-23T09:00" || o.StartAt.Format(time.RFC3339) != "2026-10-23T04:00:00Z" {
+		t.Fatalf("override: %+v", o)
+	}
+	// A changed occurrence alone is applied on delivery but not answered here.
+	alone := strings.Replace(exchangeInvite, "BEGIN:VEVENT\r\n"+exchangeInvite[strings.Index(exchangeInvite, "ORGANIZER"):strings.Index(exchangeInvite, "END:VCALENDAR")], instance, 1)
+	if _, err := ParseExternalInvite([]byte(alone)); err == nil {
+		t.Fatal("lone occurrence answerable")
+	}
+	if one, err := ParseITIP([]byte(alone)); err != nil || one.recurrenceID.value == "" {
+		t.Fatalf("lone occurrence: %v %+v", err, one.recurrenceID)
+	}
+}

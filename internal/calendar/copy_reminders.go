@@ -75,7 +75,7 @@ func (c *CopyReminders) RunOnce(ctx context.Context, now time.Time) error {
 		WHERE i.reminder_minutes>0 AND e.status='confirmed'
 		UNION ALL
 		SELECT 'calendar_external_events', x.id::text, cal.workspace_id::text, cal.user_id::text, x.attendee, x.reminder_minutes, x.reminded_until,
-		x.id,x.title,x.description,x.location,x.timezone,x.all_day,x.start_at,x.end_at,x.start_date::text,x.end_date::text,1,x.organizer_email,x.uid,x.sequence,'confirmed',x.reminder_minutes,x.updated_at,x.rrule,x.exdates,''
+		x.id,x.title,x.description,x.location,x.timezone,x.all_day,x.start_at,x.end_at,x.start_date::text,x.end_date::text,1,x.organizer_email,x.uid,x.sequence,'confirmed',x.reminder_minutes,x.updated_at,x.rrule,x.exdates,'',x.overrides
 		FROM calendar_external_events x JOIN calendars cal ON cal.id=x.calendar_id WHERE x.reminder_minutes>0`)
 	if err != nil {
 		return err
@@ -85,8 +85,13 @@ func (c *CopyReminders) RunOnce(ctx context.Context, now time.Time) error {
 		var d copyDue
 		var minutes int
 		var start, end *string
+		var overrides []byte
 		e := &d.event
-		if err = rows.Scan(&d.table, &d.id, &d.ws, &d.user, &d.to, &minutes, &d.after, &e.ID, &e.Title, &e.Description, &e.Location, &e.Timezone, &e.AllDay, &e.StartAt, &e.EndAt, &start, &end, &e.Version, &e.Organizer, &e.UID, &e.Sequence, &e.Status, &e.ReminderMinutes, &e.UpdatedAt, &e.RRule, &e.Exdates, &e.Color); err != nil {
+		if err = rows.Scan(&d.table, &d.id, &d.ws, &d.user, &d.to, &minutes, &d.after, &e.ID, &e.Title, &e.Description, &e.Location, &e.Timezone, &e.AllDay, &e.StartAt, &e.EndAt, &start, &end, &e.Version, &e.Organizer, &e.UID, &e.Sequence, &e.Status, &e.ReminderMinutes, &e.UpdatedAt, &e.RRule, &e.Exdates, &e.Color, &overrides); err != nil {
+			rows.Close()
+			return err
+		}
+		if err = decodeOverrides(overrides, &e.Input); err != nil {
 			rows.Close()
 			return err
 		}

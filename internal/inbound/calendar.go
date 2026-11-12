@@ -42,8 +42,13 @@ func parseCalendarPreview(data []byte) *CalendarPreview {
 			lines = append(lines, line)
 		}
 	}
-	out := &CalendarPreview{}
-	inside := false
+	// A series may come with its changed occurrences as further VEVENTs of the
+	// same UID; the series itself is previewed. A lone changed occurrence is
+	// shown but cannot be answered here.
+	var method string
+	var master, instance *CalendarPreview
+	var cur *CalendarPreview
+	changed := false
 	events := 0
 	for _, line := range lines {
 		name, value, ok := strings.Cut(line, ":")
@@ -54,53 +59,59 @@ func parseCalendarPreview(data []byte) *CalendarPreview {
 		switch property {
 		case "BEGIN":
 			if value == "VEVENT" {
-				inside = true
 				events++
+				cur, changed = &CalendarPreview{}, false
 			}
 		case "END":
-			if value == "VEVENT" {
-				inside = false
+			if value == "VEVENT" && cur != nil {
+				if !changed && master == nil {
+					master = cur
+				} else if changed && instance == nil {
+					instance = cur
+				}
+				cur = nil
 			}
 		case "METHOD":
-			if !inside {
-				out.Method = strings.ToUpper(value)
-			}
-		case "UID":
-			if inside {
-				out.UID = value
-			}
-		case "SUMMARY":
-			if inside {
-				out.Title = icsUnescape(value)
-			}
-		case "DTSTART":
-			if inside {
-				out.Start = value
-			}
-		case "DTEND":
-			if inside {
-				out.End = value
-			}
-		case "ORGANIZER":
-			if inside {
-				out.Organizer = value
-				if len(value) >= 7 && strings.EqualFold(value[:7], "mailto:") {
-					out.Organizer = value[7:]
-				}
-			}
-		case "RRULE":
-			if _, err := calendar.ParseRule(value); inside && err != nil {
-				out.Unsupported = true
-			}
-		case "RDATE", "RECURRENCE-ID":
-			if inside {
-				out.Unsupported = true
+			if cur == nil {
+				method = strings.ToUpper(value)
 			}
 		}
+		if cur == nil {
+			continue
+		}
+		switch property {
+		case "UID":
+			cur.UID = value
+		case "SUMMARY":
+			cur.Title = icsUnescape(value)
+		case "DTSTART":
+			cur.Start = value
+		case "DTEND":
+			cur.End = value
+		case "ORGANIZER":
+			cur.Organizer = value
+			if len(value) >= 7 && strings.EqualFold(value[:7], "mailto:") {
+				cur.Organizer = value[7:]
+			}
+		case "RECURRENCE-ID":
+			changed = true
+		case "RRULE":
+			if _, err := calendar.ParseRule(value); err != nil {
+				cur.Unsupported = true
+			}
+		case "RDATE":
+			cur.Unsupported = true
+		}
 	}
-	if events != 1 || out.UID == "" || out.Title == "" || out.Start == "" || out.End == "" {
+	out := master
+	if out == nil && instance != nil {
+		out = instance
+		out.Unsupported = true
+	}
+	if out == nil || events > 100 || out.UID == "" || out.Title == "" || out.Start == "" || out.End == "" {
 		return nil
 	}
+	out.Method = method
 	if out.Method != "REQUEST" && out.Method != "CANCEL" && out.Method != "REPLY" {
 		out.Unsupported = true
 	}

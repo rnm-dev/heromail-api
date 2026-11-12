@@ -42,12 +42,26 @@ func expand(e Event, from, to time.Time, fromDate, toDate string) []Event {
 		return nil
 	}
 	skip := exdateSet(e)
-	var out []Event
-	rule.Starts(base, func(t time.Time) bool {
-		day := t.Format("2006-01-02")
+	changed := overrideMap(e)
+	master := e.Input
+	occurrence := func(day string) Event {
 		c := e
 		c.Occurrence, c.SeriesStart, c.SeriesEnd = day, e.Start, e.End
 		c.seriesAt, c.seriesEndAt = e.StartAt, e.EndAt
+		c.Master = &master
+		c.Input.Overrides = nil
+		return c
+	}
+	var out []Event
+	rule.Starts(base, func(t time.Time) bool {
+		day := t.Format("2006-01-02")
+		if _, ok := changed[day]; ok {
+			if (e.AllDay && day >= toDate) || (!e.AllDay && !t.Before(to)) {
+				return false
+			}
+			return true
+		}
+		c := occurrence(day)
 		if e.AllDay {
 			if day >= toDate {
 				return false
@@ -71,7 +85,47 @@ func expand(e Event, from, to time.Time, fromDate, toDate string) []Event {
 		out = append(out, c)
 		return true
 	})
+	for day, o := range changed {
+		if skip[day] {
+			continue
+		}
+		c := occurrence(day)
+		applyOverride(&c, o)
+		if e.AllDay {
+			if c.Start >= toDate || c.End <= fromDate {
+				continue
+			}
+		} else if c.StartAt == nil || !c.StartAt.Before(to) || !c.EndAt.After(from) {
+			continue
+		}
+		out = append(out, c)
+	}
 	return out
+}
+
+// effectiveStarts walks a series' occurrences as they will happen: skipped
+// dates left out, overridden ones at their new start. yield gets the original
+// date too; it is called in original order.
+func effectiveStarts(e Event, yield func(day string, t time.Time) bool) bool {
+	base, _, ok := seriesBase(e)
+	rule, err := ParseRule(e.RRule)
+	if !ok || err != nil {
+		return false
+	}
+	skip, changed := exdateSet(e), overrideMap(e)
+	rule.Starts(base, func(t time.Time) bool {
+		day := t.Format("2006-01-02")
+		if skip[day] {
+			return true
+		}
+		if o, ok := changed[day]; ok {
+			if moved, ok := overrideStart(e, o, base.Location()); ok {
+				t = moved
+			}
+		}
+		return yield(day, t)
+	})
+	return true
 }
 
 // seriesEnd is stored as series_until: when the final occurrence ends, or nil.
@@ -119,18 +173,13 @@ func nextReminder(e Event, now time.Time) (time.Time, bool) {
 		at := reminderFor(e, base)
 		return at, at.After(now)
 	}
-	rule, err := ParseRule(e.RRule)
-	if err != nil {
-		return time.Time{}, false
-	}
-	skip := exdateSet(e)
 	var found time.Time
-	rule.Starts(base, func(t time.Time) bool {
-		if at := reminderFor(e, t); at.After(now) && !skip[t.Format("2006-01-02")] {
+	effectiveStarts(e, func(day string, t time.Time) bool {
+		if at := reminderFor(e, t); at.After(now) && (found.IsZero() || at.Before(found)) {
 			found = at
-			return false
 		}
-		return true
+		orig, _ := time.Parse("2006-01-02", day)
+		return found.IsZero() || orig.Before(found.AddDate(0, 0, 31))
 	})
 	return found, !found.IsZero()
 }
@@ -148,18 +197,20 @@ func atOccurrence(e Event, at time.Time) Event {
 	if e.RRule == "" {
 		return e
 	}
-	base, length, ok := seriesBase(e)
+	_, length, ok := seriesBase(e)
 	if !ok {
 		return e
 	}
-	rule, err := ParseRule(e.RRule)
-	if err != nil {
-		return e
-	}
 	out := e
-	rule.Starts(base, func(t time.Time) bool {
+	changed := overrideMap(e)
+	effectiveStarts(e, func(day string, t time.Time) bool {
 		if !reminderFor(e, t).Equal(at) {
-			return reminderFor(e, t).Before(at)
+			orig, _ := time.Parse("2006-01-02", day)
+			return orig.Before(at.AddDate(0, 0, 31))
+		}
+		if o, ok := changed[day]; ok {
+			applyOverride(&out, o)
+			return false
 		}
 		if e.AllDay {
 			out.Start, out.End = t.Format("2006-01-02"), t.Add(length).Format("2006-01-02")

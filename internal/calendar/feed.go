@@ -54,9 +54,9 @@ func (s *Store) Feed(ctx context.Context, token string, now time.Time) (string, 
 				return "", err
 			}
 			for _, e := range page {
-				if e.Occurrence != "" {
+				if e.Occurrence != "" && e.Master != nil {
 					// A series is published once, as its master with RRULE.
-					e.Start, e.End, e.StartAt, e.EndAt = e.SeriesStart, e.SeriesEnd, e.seriesAt, e.seriesEndAt
+					e.Input, e.StartAt, e.EndAt = *e.Master, e.seriesAt, e.seriesEndAt
 				}
 				if !seen[e.ID] {
 					seen[e.ID] = true
@@ -97,6 +97,11 @@ func (s *Store) Feed(ctx context.Context, token string, now time.Time) (string, 
 			lines = append(lines, "STATUS:CONFIRMED")
 		}
 		lines = append(lines, "END:VEVENT")
+		var shared []string
+		if e.Organizer != "" {
+			shared = []string{"ORGANIZER:mailto:" + e.Organizer}
+		}
+		lines = append(lines, overrideBlocks(e, stamp, "", shared)...)
 	}
 	lines = append(lines, "END:VCALENDAR")
 	for i := range lines {

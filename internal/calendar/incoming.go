@@ -37,11 +37,17 @@ func ApplyIncoming(ctx context.Context, tx pgx.Tx, recipient, from string, ics [
 		if invite.Organizer != from {
 			return nil
 		}
+		if invite.recurrenceID.value != "" {
+			return applyInstance(ctx, tx, invite, recipient, from, seq, true)
+		}
 		_, err = tx.Exec(ctx, `DELETE FROM calendar_external_events WHERE uid=$1 AND attendee=$2 AND organizer_email=$3 AND sequence<=$4`, invite.UID, recipient, from, seq)
 		return err
 	case "REQUEST":
 		if invite.Organizer != from || invite.start == "" {
 			return nil
+		}
+		if invite.recurrenceID.value != "" {
+			return applyInstance(ctx, tx, invite, recipient, from, seq, false)
 		}
 		rows, err := tx.Query(ctx, `SELECT x.id,c.timezone FROM calendar_external_events x JOIN calendars c ON c.id=x.calendar_id
 			WHERE x.uid=$1 AND x.attendee=$2 AND x.organizer_email=$3 AND x.sequence<$4`, invite.UID, recipient, from, seq)
@@ -75,10 +81,69 @@ func ApplyIncoming(ctx context.Context, tx pgx.Tx, recipient, from string, ics [
 				startAt, endAt = start, end
 			}
 			if _, err = tx.Exec(ctx, `UPDATE calendar_external_events SET sequence=$2,title=$3,description=$4,location=$5,timezone=$6,all_day=$7,
-				start_at=$8,end_at=$9,start_date=$10::date,end_date=$11::date,rrule=$12,exdates=$13,series_until=$14,updated_at=now() WHERE id=$1`,
-				c.id, seq, in.Title, in.Description, in.Location, in.Timezone, in.AllDay, startAt, endAt, startDate, endDate, in.RRule, in.Exdates, seriesEnd(in, start, end)); err != nil {
+				start_at=$8,end_at=$9,start_date=$10::date,end_date=$11::date,rrule=$12,exdates=$13,series_until=$14,overrides=$15,updated_at=now() WHERE id=$1`,
+				c.id, seq, in.Title, in.Description, in.Location, in.Timezone, in.AllDay, startAt, endAt, startDate, endDate, in.RRule, in.Exdates, seriesEnd(in, start, end), encodeOverrides(in)); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+// applyInstance merges a single changed (or cancelled) occurrence sent on its
+// own into accepted repeating copies of that meeting.
+func applyInstance(ctx context.Context, tx pgx.Tx, invite ExternalInvite, recipient, from string, seq int, cancel bool) error {
+	rows, err := tx.Query(ctx, `SELECT x.id,x.timezone,x.all_day,x.rrule,x.exdates,x.overrides,c.timezone FROM calendar_external_events x JOIN calendars c ON c.id=x.calendar_id
+		WHERE x.uid=$1 AND x.attendee=$2 AND x.organizer_email=$3 AND x.rrule<>'' AND x.sequence<=$4`, invite.UID, recipient, from, seq)
+	if err != nil {
+		return err
+	}
+	type copyRow struct {
+		id   string
+		in   Input
+		zone string
+	}
+	var copies []copyRow
+	for rows.Next() {
+		var c copyRow
+		var raw []byte
+		if err = rows.Scan(&c.id, &c.in.Timezone, &c.in.AllDay, &c.in.RRule, &c.in.Exdates, &raw, &c.zone); err != nil {
+			rows.Close()
+			return err
+		}
+		if err = decodeOverrides(raw, &c.in); err != nil {
+			rows.Close()
+			return err
+		}
+		copies = append(copies, c)
+	}
+	rows.Close()
+	for _, c := range copies {
+		fallback, zerr := Zone(c.zone)
+		if zerr != nil {
+			fallback = time.UTC
+		}
+		day, ok := invite.Occurrence(c.in, fallback)
+		if !ok {
+			continue
+		}
+		kept := []Override{}
+		for _, o := range overrideList(c.in) {
+			if o.Occurrence != day {
+				kept = append(kept, o)
+			}
+		}
+		exdates := c.in.Exdates
+		if cancel {
+			exdates = append(exdates, day)
+		} else if o, ok := invite.Override(c.in, fallback); ok {
+			kept = append(kept, o)
+		} else {
+			continue
+		}
+		c.in.Overrides = &kept
+		if _, err = tx.Exec(ctx, `UPDATE calendar_external_events SET exdates=$2,overrides=$3,updated_at=now() WHERE id=$1`, c.id, exdates, encodeOverrides(c.in)); err != nil {
+			return err
 		}
 	}
 	return nil

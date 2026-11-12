@@ -69,10 +69,22 @@ func buildICS(e Event, method, recipient, response string) string {
 	if method != "REPLY" {
 		lines = append(lines, recurrenceLines(e)...)
 	}
+	status := ""
 	if method == "CANCEL" {
+		status = "CANCELLED"
 		lines = append(lines, "STATUS:CANCELLED")
 	}
-	lines = append(lines, "END:VEVENT", "END:VCALENDAR")
+	lines = append(lines, "END:VEVENT")
+	if method != "REPLY" {
+		var shared []string
+		for _, l := range lines {
+			if strings.HasPrefix(l, "ORGANIZER") || strings.HasPrefix(l, "ATTENDEE") {
+				shared = append(shared, l)
+			}
+		}
+		lines = append(lines, overrideBlocks(e, stamp, status, shared)...)
+	}
+	lines = append(lines, "END:VCALENDAR")
 	for i := range lines {
 		lines[i] = foldICS(lines[i])
 	}

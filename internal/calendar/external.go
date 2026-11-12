@@ -26,6 +26,10 @@ type ExternalInvite struct {
 	startProp, endProp             property
 	rrule                          string
 	exdates                        []property
+	// recurrenceID is set on a single changed occurrence (RECURRENCE-ID);
+	// instances are such occurrences sent along with the series.
+	recurrenceID property
+	instances    []ExternalInvite
 }
 
 type property struct{ name, params, value, line string }
@@ -63,7 +67,7 @@ func mailtoAddress(value string) string {
 // Other shapes stay download-only rather than answering a single instance.
 func ParseExternalInvite(data []byte) (ExternalInvite, error) {
 	out, err := ParseITIP(data)
-	if err == nil && (out.Method != "REQUEST" || out.start == "") {
+	if err == nil && (out.Method != "REQUEST" || out.start == "" || out.recurrenceID.value != "") {
 		return ExternalInvite{}, invalid("Это приглашение нельзя подтвердить из Heromail. Скачайте ICS-файл.")
 	}
 	return out, err
@@ -92,7 +96,9 @@ func ParseITIP(data []byte) (ExternalInvite, error) {
 			lines = append(lines, line)
 		}
 	}
-	out := ExternalInvite{Partstat: map[string]string{}}
+	var all []*ExternalInvite
+	var timezones []string
+	cur := &ExternalInvite{Partstat: map[string]string{}}
 	var method string
 	var stack []string
 	var zone []string
@@ -110,6 +116,11 @@ func ParseITIP(data []byte) (ExternalInvite, error) {
 			}
 			if value == "VEVENT" {
 				events++
+				if events > 100 {
+					return ExternalInvite{}, unsupported
+				}
+				cur = &ExternalInvite{Partstat: map[string]string{}}
+				all = append(all, cur)
 			}
 		}
 		top := ""
@@ -126,7 +137,7 @@ func ParseITIP(data []byte) (ExternalInvite, error) {
 			}
 			stack = stack[:len(stack)-1]
 			if value == "VTIMEZONE" {
-				out.timezones = append(out.timezones, zone...)
+				timezones = append(timezones, zone...)
 				zone = nil
 			}
 			continue
@@ -139,43 +150,72 @@ func ParseITIP(data []byte) (ExternalInvite, error) {
 		}
 		switch p.name {
 		case "UID":
-			out.UID = p.value
+			cur.UID = p.value
 		case "SEQUENCE":
-			out.Sequence = strings.TrimSpace(p.value)
+			cur.Sequence = strings.TrimSpace(p.value)
 		case "SUMMARY":
-			out.Title, out.summary = icsUnescape(p.value), line
+			cur.Title, cur.summary = icsUnescape(p.value), line
 		case "DTSTART":
-			out.start, out.startProp = line, p
+			cur.start, cur.startProp = line, p
 		case "DTEND":
-			out.end, out.endProp = line, p
+			cur.end, cur.endProp = line, p
 		case "LOCATION":
-			out.Location = icsUnescape(p.value)
+			cur.Location = icsUnescape(p.value)
 		case "DESCRIPTION":
-			out.Description = icsUnescape(p.value)
+			cur.Description = icsUnescape(p.value)
 		case "ORGANIZER":
-			out.Organizer, out.organizer = mailtoAddress(p.value), line
+			cur.Organizer, cur.organizer = mailtoAddress(p.value), line
 		case "ATTENDEE":
 			if addr := mailtoAddress(p.value); addr != "" {
-				out.Attendees = append(out.Attendees, addr)
-				out.Partstat[addr] = strings.ToUpper(paramValue(p.params, "PARTSTAT"))
+				cur.Attendees = append(cur.Attendees, addr)
+				cur.Partstat[addr] = strings.ToUpper(paramValue(p.params, "PARTSTAT"))
 			}
 		case "RRULE":
 			// Only rules Heromail can expand itself; others stay download-only.
-			if _, err := ParseRule(p.value); err != nil || out.rrule != "" {
+			if _, err := ParseRule(p.value); err != nil || cur.rrule != "" {
 				return ExternalInvite{}, unsupported
 			}
-			out.rrule = p.value
+			cur.rrule = p.value
 		case "EXDATE":
-			if len(out.exdates) > 500 {
+			if len(cur.exdates) > 500 {
 				return ExternalInvite{}, unsupported
 			}
-			out.exdates = append(out.exdates, p)
-		case "RDATE", "RECURRENCE-ID":
+			cur.exdates = append(cur.exdates, p)
+		case "RECURRENCE-ID":
+			cur.recurrenceID = p
+		case "RDATE":
 			return ExternalInvite{}, unsupported
 		}
 	}
+	// One series (with its changed occurrences) or one changed occurrence.
+	var master *ExternalInvite
+	var instances []ExternalInvite
+	for _, ev := range all {
+		ev.timezones = timezones
+		if ev.UID != all[0].UID {
+			return ExternalInvite{}, unsupported
+		}
+		if ev.recurrenceID.value == "" {
+			if master != nil {
+				return ExternalInvite{}, unsupported
+			}
+			master = ev
+		} else {
+			instances = append(instances, *ev)
+		}
+	}
+	var out ExternalInvite
+	switch {
+	case master != nil:
+		out = *master
+		out.instances = instances
+	case len(instances) == 1:
+		out = instances[0]
+	default:
+		return ExternalInvite{}, unsupported
+	}
 	out.Method = method
-	if (method != "REQUEST" && method != "REPLY" && method != "CANCEL") || events != 1 || len(stack) != 0 || out.UID == "" || out.Organizer == "" || len(out.timezones) > 400 {
+	if (method != "REQUEST" && method != "REPLY" && method != "CANCEL") || len(stack) != 0 || out.UID == "" || out.Organizer == "" || len(timezones) > 400 {
 		return ExternalInvite{}, unsupported
 	}
 	if out.Sequence == "" {

@@ -26,7 +26,7 @@ func (s *Store) Search(ctx context.Context, ws, user, q string) ([]Event, error)
 		JOIN calendar_attendees a ON a.event_id=i.event_id AND a.email=i.recipient
 		WHERE c.workspace_id=$1 AND c.user_id=$2 AND `+match("e")+`
 		UNION ALL
-		SELECT x.id,x.title,x.description,x.location,x.timezone,x.all_day,x.start_at,x.end_at,x.start_date::text,x.end_date::text,1,x.organizer_email,x.uid,x.sequence,'confirmed'::text,x.reminder_minutes,x.updated_at,x.rrule,x.exdates,''::text,
+		SELECT x.id,x.title,x.description,x.location,x.timezone,x.all_day,x.start_at,x.end_at,x.start_date::text,x.end_date::text,1,x.organizer_email,x.uid,x.sequence,'confirmed'::text,x.reminder_minutes,x.updated_at,x.rrule,x.exdates,''::text,x.overrides,
 		'attendee'::text,''::text,x.attendee,x.response,coalesce(x.start_at,x.start_date::timestamp AT TIME ZONE 'UTC')
 		FROM calendar_external_events x JOIN calendars c ON c.id=x.calendar_id
 		WHERE c.workspace_id=$1 AND c.user_id=$2 AND `+match("x")+`
