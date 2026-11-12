@@ -85,6 +85,8 @@ func Router(server *Server, apiKeys *auth.Authenticator, accounts *account.Servi
 			accounts.RequireSession(http.HandlerFunc(server.calendarSharedEvents)).ServeHTTP(w, r)
 		case calendarRoomsPath.MatchString(path):
 			accounts.RequireSession(http.HandlerFunc(server.calendarRooms)).ServeHTTP(w, r)
+		case calendarMeetPath.MatchString(path):
+			accounts.RequireSession(http.HandlerFunc(server.calendarMeet)).ServeHTTP(w, r)
 		case calendarBusyPath.MatchString(path):
 			accounts.RequireSession(http.HandlerFunc(server.calendarBusy)).ServeHTTP(w, r)
 		case calendarFeedSettingsPath.MatchString(path):

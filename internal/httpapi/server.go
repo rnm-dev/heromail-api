@@ -7,6 +7,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"github.com/rnm/heromail/backend/internal/meet"
 	"io"
 	"log"
 	"mime/multipart"
@@ -35,6 +36,7 @@ type Server struct {
 	domains    *maildomain.Service
 	inbound    *inbound.Store
 	limiter    *ratelimit.Limiter
+	meet       *meet.Client
 }
 
 func NewServer(

@@ -256,6 +256,16 @@ func TestAssistantCalendar(t *testing.T) {
 	if list.Code != 200 || !strings.Contains(list.Body.String(), "Созвон") {
 		t.Fatalf("list: %d %s", list.Code, list.Body)
 	}
+	// Google Meet is off in tests: both a session and the key reach the handler and get 503.
+	if rec := call("POST", "/workspaces/"+slug+"/calendar/meet", "", issued.Key); rec.Code != 503 || !strings.Contains(rec.Body.String(), "meet_not_configured") {
+		t.Fatalf("meet via key: %d %s", rec.Code, rec.Body)
+	}
+	if rec := h.do("POST", "/workspaces/"+slug+"/calendar/meet", "", token); rec.Code != 503 {
+		t.Fatalf("meet via session: %d %s", rec.Code, rec.Body)
+	}
+	if rec := call("POST", "/workspaces/"+otherSlug+"/calendar/meet", "", issued.Key); rec.Code != 403 {
+		t.Fatalf("meet other workspace: %d", rec.Code)
+	}
 	// An MCP client calls many times in a row: more than the 30-login limit must pass.
 	for i := 0; i < 40; i++ {
 		if rec := call("GET", "/assistant/me", "", issued.Key); rec.Code != 200 {

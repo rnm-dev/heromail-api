@@ -28,6 +28,11 @@ func (s *Server) assistantCalendar(accounts *account.Service, generated http.Han
 			handler = http.HandlerFunc(s.calendarBusy)
 		}
 	}
+	if m == nil && r.Method == http.MethodPost {
+		if m = calendarMeetPath.FindStringSubmatch(r.URL.Path); m != nil {
+			handler = http.HandlerFunc(s.calendarMeet)
+		}
+	}
 	if m == nil {
 		return false
 	}

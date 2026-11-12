@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/rnm/heromail/backend/internal/meet"
 	"log"
 	"net/http"
 	"os"
@@ -103,8 +104,17 @@ func main() {
 
 	// The routes themselves are generated from api/openapi.yaml; this is only
 	// the wiring of services into that generated surface.
+	server := httpapi.NewServer(pool, accounts, emails, workspaces, domains, inbound.NewStore(pool), limiter)
+	// Google Meet rooms for calendar events: optional, the endpoint answers 503 without it.
+	if m, err := meet.FromEnv(); err == nil {
+		server.SetMeet(m)
+	} else if !errors.Is(err, meet.ErrNotConfigured) {
+		log.Fatalf("meet: %v", err)
+	} else {
+		log.Print("meet: GOOGLE_MEET_CREDENTIALS is not set, Google Meet rooms are off")
+	}
 	handler := httpapi.Router(
-		httpapi.NewServer(pool, accounts, emails, workspaces, domains, inbound.NewStore(pool), limiter),
+		server,
 		auth.New(pool),
 		accounts,
 	)
