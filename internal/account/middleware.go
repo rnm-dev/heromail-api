@@ -30,6 +30,7 @@ type contextKey int
 const (
 	userKey contextKey = iota
 	sessionTokenKey
+	sessionIDKey
 )
 
 // CurrentUser returns the signed-in user. Present on every request that made
@@ -44,6 +45,14 @@ func CurrentUser(ctx context.Context) (*User, bool) {
 func SessionToken(ctx context.Context) (string, bool) {
 	t, ok := ctx.Value(sessionTokenKey).(string)
 	return t, ok
+}
+
+// SessionID returns the id of the session the request authenticated with, so
+// the sessions list can mark the current device and logout can find its push
+// registration.
+func SessionID(ctx context.Context) (string, bool) {
+	id, ok := ctx.Value(sessionIDKey).(string)
+	return id, ok
 }
 
 // WithUser injects a user as RequireSession would, for tests.
@@ -64,8 +73,13 @@ func (s *Service) RequireSession(next http.Handler) http.Handler {
 			return
 		}
 
-		user, sessionID, lastSeen, err := s.store.UserBySessionToken(r.Context(), hashToken(token))
+		sess, err := s.store.UserBySessionToken(r.Context(), hashToken(token))
 		switch {
+		case errors.Is(err, ErrAccessExpired):
+			// The one 401 a mobile client answers with POST /auth/refresh
+			// rather than the sign-in screen.
+			writeError(w, http.StatusUnauthorized, "access_token_expired", "access token expired; refresh it")
+			return
 		case errors.Is(err, ErrNotFound):
 			writeError(w, http.StatusUnauthorized, "unauthenticated", "session is invalid or expired")
 			return
@@ -75,6 +89,7 @@ func (s *Service) RequireSession(next http.Handler) http.Handler {
 			return
 		}
 
+		user, sessionID, lastSeen := sess.User, sess.SessionID, sess.LastSeen
 		if user.MustChangePassword && r.URL.Path != "/auth/me" && r.URL.Path != "/auth/logout" && r.URL.Path != "/auth/change-initial-password" {
 			writeError(w, http.StatusForbidden, "password_change_required", "Сначала задайте собственный пароль.")
 			return
@@ -89,6 +104,7 @@ func (s *Service) RequireSession(next http.Handler) http.Handler {
 
 		ctx := context.WithValue(r.Context(), userKey, user)
 		ctx = context.WithValue(ctx, sessionTokenKey, token)
+		ctx = context.WithValue(ctx, sessionIDKey, sessionID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

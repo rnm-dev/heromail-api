@@ -90,12 +90,8 @@ func (s *Service) startPasswordSession(ctx context.Context, userID string, verif
 	if !bytes.Equal([]byte(current), verifiedHash) {
 		return nil, ErrCredentials
 	}
-	token, hash, err := newToken()
+	creds, err := insertSession(ctx, tx, user, rc)
 	if err != nil {
-		return nil, err
-	}
-	creds := &Credentials{Token: token, User: user}
-	if err = tx.QueryRow(ctx, `INSERT INTO sessions(user_id,token_hash,user_agent,ip,expires_at) VALUES($1,$2,nullif($3,''),nullif($4,'')::inet,now()+$5::interval) RETURNING expires_at`, userID, hash, rc.UserAgent, rc.IP, sessionTTL.String()).Scan(&creds.ExpiresAt); err != nil {
 		return nil, err
 	}
 	if err = tx.Commit(ctx); err != nil {

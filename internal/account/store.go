@@ -422,41 +422,38 @@ func (s *Store) ConsumeOTP(
 
 // ---------------------------------------------------------------- sessions
 
-func (s *Store) CreateSession(ctx context.Context, userID string, hash []byte, userAgent, ip string, ttl time.Duration) (*Session, error) {
-	var sess Session
-	err := s.pool.QueryRow(ctx, `
-		INSERT INTO sessions (user_id, token_hash, user_agent, ip, expires_at)
-		VALUES ($1, $2, nullif($3, ''), nullif($4, '')::inet, now() + $5::interval)
-		RETURNING id, user_id, user_agent, expires_at, revoked_at, last_seen_at, created_at`,
-		userID, hash, userAgent, ip, ttl.String(),
-	).Scan(&sess.ID, &sess.UserID, &sess.UserAgent, &sess.ExpiresAt,
-		&sess.RevokedAt, &sess.LastSeenAt, &sess.CreatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("create session: %w", err)
-	}
-	return &sess, nil
+// sessionAuth is what the middleware needs to know about a bearer token.
+type sessionAuth struct {
+	User      *User
+	SessionID string
+	LastSeen  *time.Time
 }
 
 // UserBySessionToken resolves a live session to its user. Expired and revoked
-// sessions are simply absent.
-func (s *Store) UserBySessionToken(ctx context.Context, hash []byte) (*User, string, *time.Time, error) {
+// sessions are ErrNotFound; a live mobile session whose short access token has
+// run out is ErrAccessExpired, so the app refreshes instead of signing out.
+func (s *Store) UserBySessionToken(ctx context.Context, hash []byte) (*sessionAuth, error) {
 	var u User
-	var sessionID string
-	var lastSeen *time.Time
+	var a sessionAuth
+	var accessExpires *time.Time
 	err := s.pool.QueryRow(ctx, `
 		SELECT u.id, u.email, u.name, u.email_verified_at, u.created_at, u.updated_at, u.must_change_password,
-		       s.id, s.last_seen_at
+		       s.id, s.last_seen_at, s.access_expires_at
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()`, hash,
 	).Scan(&u.ID, &u.Email, &u.Name, &u.EmailVerifiedAt, &u.CreatedAt, &u.UpdatedAt, &u.MustChangePassword,
-		&sessionID, &lastSeen)
+		&a.SessionID, &a.LastSeen, &accessExpires)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, "", nil, ErrNotFound
+		return nil, ErrNotFound
 	}
 	if err != nil {
-		return nil, "", nil, err
+		return nil, err
 	}
-	return &u, sessionID, lastSeen, nil
+	if accessExpires != nil && !accessExpires.After(time.Now()) {
+		return nil, ErrAccessExpired
+	}
+	a.User = &u
+	return &a, nil
 }
 
 func (s *Store) TouchSession(ctx context.Context, sessionID string) error {

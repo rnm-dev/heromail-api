@@ -23,7 +23,11 @@ func (s *Server) ChangeInitialPassword(ctx context.Context, r ChangeInitialPassw
 	if r.Body == nil {
 		return fail(400, "invalid_request", "Укажите начальный и новый пароль.")
 	}
-	creds, err := s.accounts.ChangeInitialPassword(ctx, u.ID, r.Body.CurrentPassword, r.Body.Password, requestContextFrom(ctx))
+	rc, ok := s.clientForPasswordChange(ctx, r.Body.Client, r.Body.DeviceName, r.Body.AppVersion)
+	if !ok {
+		return fail(400, "validation_failed", "client must be web, ios or android")
+	}
+	creds, err := s.accounts.ChangeInitialPassword(ctx, u.ID, r.Body.CurrentPassword, r.Body.Password, rc)
 	switch {
 	case errors.Is(err, account.ErrValidation):
 		return fail(400, "validation_failed", err.Error())
@@ -51,7 +55,11 @@ func (s *Server) ChangePassword(ctx context.Context, r ChangePasswordRequestObje
 	if r.Body == nil {
 		return fail(400, "invalid_request", "Укажите текущий и новый пароль.")
 	}
-	creds, err := s.accounts.ChangePassword(ctx, u.ID, r.Body.CurrentPassword, r.Body.Password, requestContextFrom(ctx))
+	rc, ok := s.clientForPasswordChange(ctx, r.Body.Client, r.Body.DeviceName, r.Body.AppVersion)
+	if !ok {
+		return fail(400, "validation_failed", "client must be web, ios or android")
+	}
+	creds, err := s.accounts.ChangePassword(ctx, u.ID, r.Body.CurrentPassword, r.Body.Password, rc)
 	switch {
 	case errors.Is(err, account.ErrValidation):
 		return fail(400, "validation_failed", err.Error())

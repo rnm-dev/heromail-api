@@ -166,12 +166,21 @@ type Credentials struct {
 	Token     string    `json:"token"`
 	User      *User     `json:"user"`
 	ExpiresAt time.Time `json:"expiresAt"`
+	SessionID string    `json:"sessionId"`
+	// Set only for mobile sessions: the rotating credential that renews Token.
+	RefreshToken     string     `json:"refreshToken,omitempty"`
+	RefreshExpiresAt *time.Time `json:"refreshExpiresAt,omitempty"`
 }
 
-// RequestContext is the browser detail worth recording on a session.
+// RequestContext is the client detail worth recording on a session. Client,
+// DeviceName and AppVersion come from the sign-in body; an empty Client is a
+// web session.
 type RequestContext struct {
-	UserAgent string
-	IP        string
+	UserAgent  string
+	IP         string
+	Client     Client
+	DeviceName string
+	AppVersion string
 }
 
 // Register creates the account, issues a session, and emails a verification
@@ -455,15 +464,7 @@ func (s *Service) UserByID(ctx context.Context, id string) (*User, error) {
 }
 
 func (s *Service) startSession(ctx context.Context, user *User, rc RequestContext) (*Credentials, error) {
-	token, hash, err := newToken()
-	if err != nil {
-		return nil, err
-	}
-	sess, err := s.store.CreateSession(ctx, user.ID, hash, rc.UserAgent, rc.IP, sessionTTL)
-	if err != nil {
-		return nil, err
-	}
-	return &Credentials{Token: token, User: user, ExpiresAt: sess.ExpiresAt}, nil
+	return insertSession(ctx, s.store.pool, user, rc)
 }
 
 // sendVerificationEmail is best-effort: a mail outage must not prevent the

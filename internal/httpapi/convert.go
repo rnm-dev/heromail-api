@@ -32,11 +32,17 @@ func userToAPI(u *account.User) User {
 }
 
 func credentialsToAPI(c *account.Credentials) Credentials {
-	return Credentials{
-		Token:     c.Token,
-		User:      userToAPI(c.User),
-		ExpiresAt: c.ExpiresAt,
+	out := Credentials{
+		Token:            c.Token,
+		User:             userToAPI(c.User),
+		ExpiresAt:        c.ExpiresAt,
+		SessionId:        mustUUID(c.SessionID),
+		RefreshExpiresAt: c.RefreshExpiresAt,
 	}
+	if c.RefreshToken != "" {
+		out.RefreshToken = &c.RefreshToken
+	}
+	return out
 }
 
 func workspaceToAPI(w *workspace.Workspace) Workspace {

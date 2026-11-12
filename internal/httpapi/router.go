@@ -100,7 +100,8 @@ func Router(server *Server, apiKeys *auth.Authenticator, accounts *account.Servi
 		case path == "/contacts" || strings.HasPrefix(path, "/contacts/"),
 			path == "/assistant-keys" || strings.HasPrefix(path, "/assistant-keys/"),
 			path == "/workspaces" || strings.HasPrefix(path, "/workspaces/"),
-			path == "/auth/change-initial-password", path == "/auth/change-password", path == "/auth/me", path == "/auth/logout", path == "/messages/search", path == "/messages/sent", path == "/messages/unread-counts", path == "/messages/received-search", path == "/messages/drafts":
+			path == "/auth/change-initial-password", path == "/auth/change-password", path == "/auth/me", path == "/auth/logout",
+			path == "/auth/sessions", strings.HasPrefix(path, "/auth/sessions/"), path == "/messages/search", path == "/messages/sent", path == "/messages/unread-counts", path == "/messages/received-search", path == "/messages/drafts":
 			sessionGuarded.ServeHTTP(w, r)
 		default:
 			// /health and the public /auth/* endpoints.

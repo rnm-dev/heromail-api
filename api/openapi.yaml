@@ -13,7 +13,9 @@ info:
     Two independent bearer credentials exist, and they are not interchangeable:
 
     * **session** — a signed-in person, issued by `/auth/login`. Guards `/auth/me`,
-      `/auth/logout` and everything under `/workspaces`.
+      `/auth/logout` and everything under `/workspaces`. Mobile sessions
+      (`client: ios|android`) carry a short access token renewed through
+      `/auth/refresh`; an expired one is `401 access_token_expired`.
     * **apiKey** — a machine acting for one workspace, `hm_live_…`. Guards `/v1/*`.
 
 servers:
@@ -816,6 +818,9 @@ paths:
               properties:
                 current_password: { type: string }
                 password: { type: string }
+                client: { $ref: '#/components/schemas/SessionClient' }
+                device_name: { type: string, maxLength: 200 }
+                app_version: { type: string, maxLength: 50 }
       responses:
         '200':
           description: Password replaced, old sessions revoked and a fresh session issued
@@ -844,6 +849,9 @@ paths:
               properties:
                 current_password: { type: string }
                 password: { type: string }
+                client: { $ref: '#/components/schemas/SessionClient' }
+                device_name: { type: string, maxLength: 200 }
+                app_version: { type: string, maxLength: 50 }
       responses:
         '200':
           description: Password replaced, all sessions revoked and a fresh session issued
@@ -880,6 +888,81 @@ paths:
         '204':
           description: Session revoked
         '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refreshSession
+      summary: Rotate a mobile session's tokens
+      description: |
+        Spends the refresh token and returns a new access token and a new
+        refresh token. The previous access token stops working immediately.
+
+        **Reuse detection.** A refresh token works once. Presenting one that
+        was already rotated means two parties hold the chain; the server
+        cannot tell which is legitimate, so it revokes the whole session and
+        answers `401 refresh_token_reused`. Clients must therefore serialise
+        refreshes and persist the new refresh token before using the new
+        access token.
+
+        Any protected endpoint answers `401 access_token_expired` once the
+        access token's `expiresAt` has passed; that is the signal to call this.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: Rotated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Credentials' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: |
+            `invalid_refresh_token` — unknown, expired or revoked;
+            `refresh_token_reused` — an old token was replayed and the session
+            is now revoked. Both mean: sign in again.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/sessions:
+    get:
+      tags: [auth]
+      operationId: listSessions
+      summary: The signed-in user's live sessions (devices)
+      security: [{ session: [] }]
+      responses:
+        '200':
+          description: Live sessions, most recently active first
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceSessionList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/sessions/{sessionId}:
+    delete:
+      tags: [auth]
+      operationId: revokeSession
+      summary: Sign one of your devices out
+      description: |
+        Revokes the session, its refresh chain and its push registration.
+        Revoking the current session is the same as `/auth/logout`.
+      security: [{ session: [] }]
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Revoked
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /workspaces:
     get:
@@ -2381,13 +2464,82 @@ components:
 
     Credentials:
       type: object
-      required: [token, user, expiresAt]
+      required: [token, user, expiresAt, sessionId]
+      description: |
+        A web session (no `client`, or `client: web`) gets one bearer token that
+        lives until `expiresAt` (30 days), exactly as before.
+
+        A mobile session (`client: ios|android`) gets a short-lived access
+        token (`token`, until `expiresAt`, ~15 minutes) and a `refreshToken`
+        that renews it through `POST /auth/refresh` until `refreshExpiresAt`
+        (90 days, sliding on every refresh).
       properties:
         token:
           type: string
           description: Session bearer token. Shown once; not recoverable.
         user: { $ref: '#/components/schemas/User' }
-        expiresAt: { type: string, format: date-time }
+        expiresAt:
+          type: string
+          format: date-time
+          description: When `token` stops working.
+        sessionId:
+          type: string
+          format: uuid
+          description: Matches `DeviceSession.id`; push registrations hang off it.
+        refreshToken:
+          type: string
+          description: Mobile sessions only. Single use — every refresh returns a successor.
+        refreshExpiresAt:
+          type: string
+          format: date-time
+          description: Mobile sessions only. When the session ends unless refreshed.
+
+    SessionClient:
+      type: string
+      enum: [web, ios, android]
+      description: |
+        Which app holds the session. `ios` and `android` get a refresh token;
+        `web` (and an absent value) keeps the original single-token session.
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      additionalProperties: false
+      properties:
+        refresh_token: { type: string }
+        app_version:
+          type: string
+          maxLength: 50
+          description: Updates the version shown in the devices list after an app upgrade.
+
+    DeviceSession:
+      type: object
+      required: [id, client, current, created_at, expires_at]
+      properties:
+        id: { type: string, format: uuid }
+        client: { $ref: '#/components/schemas/SessionClient' }
+        device_name: { type: string, nullable: true }
+        app_version: { type: string, nullable: true }
+        user_agent: { type: string, nullable: true }
+        ip: { type: string, nullable: true }
+        current:
+          type: boolean
+          description: True for the session this request was made with.
+        created_at: { type: string, format: date-time }
+        last_seen_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Stamped at most every 5 minutes, and on every refresh.
+        expires_at: { type: string, format: date-time }
+
+    DeviceSessionList:
+      type: object
+      required: [sessions]
+      properties:
+        sessions:
+          type: array
+          items: { $ref: '#/components/schemas/DeviceSession' }
 
     RegisterRequest:
       type: object
@@ -2410,6 +2562,9 @@ components:
             ignores anything past 72 bytes, so a longer password is refused
             rather than half-stored.
         name: { type: string, maxLength: 200 }
+        client: { $ref: '#/components/schemas/SessionClient' }
+        device_name: { type: string, maxLength: 200, description: 'Shown in the devices list, e.g. "iPhone 15 Pro".' }
+        app_version: { type: string, maxLength: 50 }
 
     LoginRequest:
       type: object
@@ -2418,6 +2573,9 @@ components:
       properties:
         email: { type: string, format: email }
         password: { type: string }
+        client: { $ref: '#/components/schemas/SessionClient' }
+        device_name: { type: string, maxLength: 200, description: 'Shown in the devices list, e.g. "iPhone 15 Pro".' }
+        app_version: { type: string, maxLength: 50 }
 
     VerifyEmailRequest:
       type: object

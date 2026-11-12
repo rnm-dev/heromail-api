@@ -146,6 +146,11 @@ func (s *Server) Register(ctx context.Context, request RegisterRequestObject) (R
 		name = *request.Body.Name
 	}
 
+	rc, ok := withClient(rc, request.Body.Client, request.Body.DeviceName, request.Body.AppVersion)
+	if !ok {
+		return Register400JSONResponse{BadRequestJSONResponse(errorBody("validation_failed", "client must be web, ios or android"))}, nil
+	}
+
 	creds, err := s.accounts.Register(ctx, account.RegisterRequest{
 		Email:        string(request.Body.Email),
 		Password:     request.Body.Password,
@@ -176,6 +181,11 @@ func (s *Server) Login(ctx context.Context, request LoginRequestObject) (LoginRe
 	}
 	if res := s.allow(ctx, rc.IP, loginPerIP); !res.Allowed {
 		return Login429JSONResponse{tooMany(res, "too many sign-in attempts from this address; try again later")}, nil
+	}
+
+	rc, ok := withClient(rc, request.Body.Client, request.Body.DeviceName, request.Body.AppVersion)
+	if !ok {
+		return Login400JSONResponse{BadRequestJSONResponse(errorBody("validation_failed", "client must be web, ios or android"))}, nil
 	}
 
 	creds, err := s.accounts.Login(ctx, account.LoginRequest{
