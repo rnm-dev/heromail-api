@@ -877,6 +877,61 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/UserEnvelope' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+    delete:
+      tags: [auth]
+      operationId: deleteAccount
+      summary: Delete the signed-in user's account
+      description: |
+        Required by App Store guideline 5.1.1(v) and Google Play. Confirmed
+        with the account password. In one transaction:
+
+        * every session, refresh token and push device, the password, pending
+          email codes, assistant keys, issued mailbox SMTP passwords,
+          contacts, drafts, signatures and notification settings are deleted;
+        * the personal workspace (if any) is deleted with its mailbox and mail;
+        * the user leaves every other workspace, taking their calendars along;
+        * the user row is anonymised (placeholder address, no name), so the
+          original address can register again.
+
+        Corporate mailboxes the user owned stay with their organisation and
+        stay private: nobody can read them until a workspace owner reassigns
+        or deletes them. If the user **owns** a workspace (every workspace has
+        exactly one owner) the request is refused with `409 sole_owner` and
+        `details.workspaces`: delete the workspace (`DELETE /workspaces/{slug}`)
+        or have support transfer ownership first. Personal workspaces do not
+        count — they are deleted with the account.
+
+        A confirmation email goes to the original address.
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              additionalProperties: false
+              properties:
+                password: { type: string }
+      responses:
+        '204':
+          description: Deleted. Every token of this account is now invalid.
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: '`invalid_password`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: |
+            `sole_owner` — `details.workspaces` lists the slugs that would be
+            left without an owner. `password_required` — the account has no
+            password to confirm with (SSO-only).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
 
   /auth/logout:
     post:

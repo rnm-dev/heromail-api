@@ -91,6 +91,8 @@ func Router(server *Server, apiKeys *auth.Authenticator, accounts *account.Servi
 			accounts.RequireSession(http.HandlerFunc(server.calendarBusy)).ServeHTTP(w, r)
 		case calendarFeedSettingsPath.MatchString(path):
 			accounts.RequireSession(http.HandlerFunc(server.calendarFeedSettings)).ServeHTTP(w, r)
+		case path == "/account-deletion":
+			accountDeletionPage(w, r)
 		case path == "/assistant/recipients":
 			server.assistantRecipients(w, r)
 		case path == "/assistant/me":
