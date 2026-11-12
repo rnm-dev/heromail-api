@@ -105,6 +105,15 @@ func main() {
 	// The routes themselves are generated from api/openapi.yaml; this is only
 	// the wiring of services into that generated surface.
 	server := httpapi.NewServer(pool, accounts, emails, workspaces, domains, inbound.NewStore(pool), limiter)
+	// Universal Links / App Links association files (docs/app-links.md).
+	appLinks, err := httpapi.AppLinksFromEnv()
+	if err != nil {
+		log.Fatalf("app links: %v", err)
+	}
+	server.SetAppLinks(appLinks)
+	if len(appLinks.AndroidCertSHA256) == 0 {
+		log.Print("app links: ANDROID_CERT_SHA256 is not set, assetlinks.json lists no app")
+	}
 	// Google Meet rooms for calendar events: optional, the endpoint answers 503 without it.
 	if m, err := meet.FromEnv(); err == nil {
 		server.SetMeet(m)

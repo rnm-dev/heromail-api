@@ -37,6 +37,7 @@ type Server struct {
 	inbound    *inbound.Store
 	limiter    *ratelimit.Limiter
 	meet       *meet.Client
+	appLinks   AppLinks
 }
 
 func NewServer(
