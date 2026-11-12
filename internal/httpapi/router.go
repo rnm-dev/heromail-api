@@ -115,7 +115,7 @@ func Router(server *Server, apiKeys *auth.Authenticator, accounts *account.Servi
 		}
 	})
 
-	return cors(withRequestContext(root))
+	return cors(withRequestContext(server.requireSupportedVersion(root)))
 }
 
 // withRequestContext stashes the user agent and client IP, which the session
@@ -126,6 +126,10 @@ func withRequestContext(next http.Handler) http.Handler {
 		rc := account.RequestContext{
 			UserAgent: r.Header.Get("User-Agent"),
 			IP:        clientIP(r),
+			// The app's headers are the fallback for a sign-in body that does
+			// not name its client, and keep the session's app version current.
+			HeaderClient:     r.Header.Get("X-Client"),
+			HeaderAppVersion: r.Header.Get("X-App-Version"),
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestContextKey, rc)))
 	})
@@ -148,7 +152,7 @@ func clientIP(r *http.Request) string {
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, If-Match, X-Client, X-App-Version")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

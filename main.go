@@ -105,6 +105,13 @@ func main() {
 	// The routes themselves are generated from api/openapi.yaml; this is only
 	// the wiring of services into that generated surface.
 	server := httpapi.NewServer(pool, accounts, emails, workspaces, domains, inbound.NewStore(pool), limiter)
+	// Mobile release policy: GET /mobile/config and the 426 update gate.
+	mobileConfig, err := httpapi.MobilePolicyFromEnv()
+	if err != nil {
+		log.Fatalf("mobile config: %v", err)
+	}
+	server.SetMobilePolicy(mobileConfig)
+
 	// Universal Links / App Links association files (docs/app-links.md).
 	appLinks, err := httpapi.AppLinksFromEnv()
 	if err != nil {

@@ -38,6 +38,7 @@ type Server struct {
 	limiter    *ratelimit.Limiter
 	meet       *meet.Client
 	appLinks   AppLinks
+	mobile     MobilePolicy
 }
 
 func NewServer(

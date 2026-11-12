@@ -181,6 +181,10 @@ type RequestContext struct {
 	Client     Client
 	DeviceName string
 	AppVersion string
+	// HeaderClient and HeaderAppVersion are the app's X-Client and
+	// X-App-Version request headers, the fallback for a body that omits them.
+	HeaderClient     string
+	HeaderAppVersion string
 }
 
 // Register creates the account, issues a session, and emails a verification

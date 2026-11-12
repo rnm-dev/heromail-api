@@ -16,6 +16,10 @@ info:
       `/auth/logout` and everything under `/workspaces`. Mobile sessions
       (`client: ios|android`) carry a short access token renewed through
       `/auth/refresh`; an expired one is `401 access_token_expired`.
+
+    Mobile apps send `X-Client: ios|android` and `X-App-Version` on every
+    request; a version below the platform minimum gets `426
+    app_update_required` (see `GET /mobile/config`).
     * **apiKey** — a machine acting for one workspace, `hm_live_…`. Guards `/v1/*`.
 
 servers:
@@ -1126,6 +1130,33 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+
+  /mobile/config:
+    get:
+      tags: [health]
+      operationId: getMobileConfig
+      summary: Release policy and links for the mobile apps
+      description: |
+        Public, and exempt from the update gate, so an outdated app can always
+        read it. Values come from the server environment (`MOBILE_*`); a
+        version not configured is `null`, which means no minimum / no
+        recommendation.
+
+        **Update gate.** A request carrying `X-Client: ios|android` and an
+        `X-App-Version` below that platform's `min_supported_version` is
+        answered `426` with code `app_update_required` and `details`
+        `{platform, current_version, min_supported_version, latest_version?,
+        store_url?}` — on every endpoint except `/health`, `/mobile/config`,
+        `/auth/login`, `/auth/logout`, `/auth/refresh`, `/auth/me` and the
+        public `/.well-known/*` and `/account-deletion` pages. Requests
+        without these headers (the web client) are never gated.
+      security: []
+      responses:
+        '200':
+          description: Current policy
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MobileConfig' }
 
   /workspaces:
     get:
@@ -2904,6 +2935,35 @@ components:
           type: array
           maxItems: 500
           items: { $ref: '#/components/schemas/MailboxNotificationUpdate' }
+
+    MobilePlatformConfig:
+      type: object
+      properties:
+        min_supported_version:
+          type: string
+          nullable: true
+          example: 1.2.0
+          description: Older versions get 426 app_update_required.
+        latest_version:
+          type: string
+          nullable: true
+          example: 1.4.0
+          description: Older versions may suggest (not force) an update.
+        store_url: { type: string, nullable: true }
+
+    MobileConfig:
+      type: object
+      required: [ios, android, features]
+      properties:
+        ios: { $ref: '#/components/schemas/MobilePlatformConfig' }
+        android: { $ref: '#/components/schemas/MobilePlatformConfig' }
+        features:
+          type: object
+          additionalProperties: { type: boolean }
+          description: Server-side feature flags; an absent flag is the app's own default.
+        privacy_policy_url: { type: string, nullable: true }
+        terms_url: { type: string, nullable: true }
+        account_deletion_url: { type: string, nullable: true }
 
     DeviceSessionList:
       type: object

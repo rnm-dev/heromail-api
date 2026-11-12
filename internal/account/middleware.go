@@ -96,7 +96,7 @@ func (s *Service) RequireSession(next http.Handler) http.Handler {
 		}
 		if lastSeen == nil || time.Since(*lastSeen) > touchInterval {
 			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 3*time.Second)
-			if err := s.store.TouchSession(ctx, sessionID); err != nil {
+			if err := s.store.TouchSession(ctx, sessionID, r.Header.Get("X-App-Version")); err != nil {
 				log.Printf("account: touch session %s: %v", sessionID, err)
 			}
 			cancel()

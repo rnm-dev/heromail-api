@@ -26,9 +26,16 @@ func withClient(rc account.RequestContext, client *SessionClient, device, versio
 			return rc, false
 		}
 		rc.Client = account.Client(*client)
+	} else if c := account.ParseClient(rc.HeaderClient); c.Mobile() {
+		// An app that sends X-Client but not the body field still gets a
+		// mobile session; an unknown header value is ignored, not refused.
+		rc.Client = c
 	}
 	rc.DeviceName = deref(device)
 	rc.AppVersion = deref(version)
+	if rc.AppVersion == "" {
+		rc.AppVersion = rc.HeaderAppVersion
+	}
 	return rc, true
 }
 
@@ -63,6 +70,9 @@ func (s *Server) RefreshSession(ctx context.Context, request RefreshSessionReque
 		return RefreshSession429JSONResponse{tooMany(res, "too many token refreshes from this address; try again later")}, nil
 	}
 	rc.AppVersion = deref(request.Body.AppVersion)
+	if rc.AppVersion == "" {
+		rc.AppVersion = rc.HeaderAppVersion
+	}
 
 	creds, err := s.accounts.Refresh(ctx, request.Body.RefreshToken, rc)
 	switch {

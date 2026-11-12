@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -456,8 +457,12 @@ func (s *Store) UserBySessionToken(ctx context.Context, hash []byte) (*sessionAu
 	return &a, nil
 }
 
-func (s *Store) TouchSession(ctx context.Context, sessionID string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE sessions SET last_seen_at = now() WHERE id = $1`, sessionID)
+// TouchSession stamps last_seen_at and, for app sessions, the version the
+// app reported in X-App-Version (so the devices list shows what is installed).
+func (s *Store) TouchSession(ctx context.Context, sessionID, appVersion string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE sessions SET last_seen_at = now(),
+		app_version = CASE WHEN client <> 'web' AND nullif($2, '') IS NOT NULL THEN left($2, 50) ELSE app_version END
+		WHERE id = $1`, sessionID, strings.TrimSpace(appVersion))
 	return err
 }
 

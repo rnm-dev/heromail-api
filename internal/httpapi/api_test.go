@@ -167,6 +167,7 @@ type harness struct {
 	domains  *maildomain.Service
 	accounts *account.Service
 	pool     *pgxpool.Pool
+	server   *Server
 }
 
 func newHarness(t *testing.T) *harness {
@@ -239,6 +240,7 @@ func newHarness(t *testing.T) *harness {
 		domains:  domains,
 		accounts: accounts,
 		pool:     pool,
+		server:   server,
 	}
 }
 
