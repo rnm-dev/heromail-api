@@ -20,17 +20,25 @@ const MaxMessageBytes = 25 << 20
 // LMTP rather than SMTP because the sender is Postfix on the same host, not
 // the internet: it has already done the spam checks, TLS and queueing, and
 // LMTP gives a per-recipient reply so one bad address does not fail the others.
-type Backend struct{ store *Store }
+type Backend struct {
+	store     *Store
+	delivered []func(messageID string)
+}
 
-func NewBackend(store *Store) *Backend { return &Backend{store: store} }
+// NewBackend takes optional hooks run after each newly stored message (not
+// duplicates). They must not block: the LMTP reply waits for them.
+func NewBackend(store *Store, delivered ...func(messageID string)) *Backend {
+	return &Backend{store: store, delivered: delivered}
+}
 
 func (b *Backend) NewSession(_ *smtp.Conn) (smtp.Session, error) {
-	return &session{store: b.store}, nil
+	return &session{store: b.store, delivered: b.delivered}, nil
 }
 
 type session struct {
-	store *Store
-	from  string
+	store     *Store
+	delivered []func(messageID string)
+	from      string
 	// Resolved at RCPT time. Rejecting an unknown address there rather than
 	// after DATA saves the sender from transmitting a message we will refuse.
 	recipients []*Mailbox
@@ -85,7 +93,7 @@ func (s *session) Data(r io.Reader) error {
 	defer cancel()
 
 	for _, mailbox := range s.recipients {
-		_, err := s.store.Deliver(ctx, DeliverParams{
+		msg, err := s.store.Deliver(ctx, DeliverParams{
 			MailboxID:    mailbox.ID,
 			EnvelopeFrom: s.from,
 			EnvelopeTo:   mailbox.Address,
@@ -106,6 +114,9 @@ func (s *session) Data(r io.Reader) error {
 			}
 		default:
 			log.Printf("inbound: delivered to %s (%d bytes)", mailbox.Address, len(raw))
+			for _, hook := range s.delivered {
+				hook(msg.ID)
+			}
 		}
 	}
 	return nil
@@ -116,8 +127,8 @@ func (s *session) Reset() { s.from = ""; s.recipients = nil }
 func (s *session) Logout() error { return nil }
 
 // NewServer builds the LMTP listener.
-func NewServer(store *Store, addr string) *smtp.Server {
-	srv := smtp.NewServer(NewBackend(store))
+func NewServer(store *Store, addr string, delivered ...func(messageID string)) *smtp.Server {
+	srv := smtp.NewServer(NewBackend(store, delivered...))
 	srv.LMTP = true
 	// Explicitly TCP. go-smtp defaults LMTP to a *unix socket*, so leaving this
 	// unset makes ListenAndServe create a file named after the host:port and

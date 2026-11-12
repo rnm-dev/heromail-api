@@ -16,10 +16,12 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/rnm/heromail/backend/internal/inbound"
+	"github.com/rnm/heromail/backend/internal/push"
 )
 
 func main() {
@@ -45,7 +47,26 @@ func main() {
 		addr = "127.0.0.1:2525"
 	}
 
-	srv := inbound.NewServer(inbound.NewStore(pool), addr)
+	// New-mail push: queued in Redis for cmd/worker, so delivery never waits
+	// on FCM. Without REDIS_ADDR mail is still delivered, just not pushed.
+	var hooks []func(string)
+	if redisAddr := os.Getenv("REDIS_ADDR"); redisAddr != "" {
+		pushes := push.NewEnqueuer(redisAddr)
+		defer pushes.Close()
+		hooks = append(hooks, func(messageID string) {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if err := pushes.EnqueueNewMessage(ctx, messageID); err != nil {
+					log.Printf("lmtpd: queue push for %s: %v", messageID, err)
+				}
+			}()
+		})
+	} else {
+		log.Print("lmtpd: REDIS_ADDR is not set, new-mail push notifications are off")
+	}
+
+	srv := inbound.NewServer(inbound.NewStore(pool), addr, hooks...)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)

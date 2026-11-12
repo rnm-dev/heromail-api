@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,6 +24,9 @@ type harness struct {
 	pool    *pgxpool.Pool
 	addr    string
 	mailbox *Mailbox
+
+	mu        sync.Mutex
+	delivered []string // message ids reported by the post-delivery hook
 }
 
 func newHarness(t *testing.T) *harness {
@@ -71,11 +75,16 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	srv := NewServer(store, ln.Addr().String())
+	h := &harness{store: store, pool: pool, addr: ln.Addr().String(), mailbox: mailbox}
+	srv := NewServer(store, ln.Addr().String(), func(id string) {
+		h.mu.Lock()
+		h.delivered = append(h.delivered, id)
+		h.mu.Unlock()
+	})
 	go srv.Serve(ln)
 	t.Cleanup(func() { srv.Close() })
 
-	return &harness{store: store, pool: pool, addr: ln.Addr().String(), mailbox: mailbox}
+	return h
 }
 
 // deliver runs one LMTP conversation by hand.
@@ -180,6 +189,22 @@ func TestDeliverStoresAMessage(t *testing.T) {
 
 // An address nobody claimed must be refused permanently. A temporary code
 // would have the sender retrying for days before finally bouncing.
+// The hook is what queues the new-mail push: it fires once per stored
+// message, and not for a retry the store recognised as a duplicate.
+func TestDeliveredHookSkipsDuplicates(t *testing.T) {
+	h := newHarness(t)
+	for i := 0; i < 2; i++ {
+		if err := h.deliver(t, h.mailbox.Address, sampleMessage); err != nil {
+			t.Fatalf("deliver %d: %v", i, err)
+		}
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.delivered) != 1 {
+		t.Fatalf("hook ran %d times, want 1", len(h.delivered))
+	}
+}
+
 func TestUnknownAddressIsRejectedPermanently(t *testing.T) {
 	h := newHarness(t)
 

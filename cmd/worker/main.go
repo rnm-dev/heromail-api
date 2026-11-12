@@ -13,15 +13,18 @@ import (
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/rnm/heromail/backend/internal/calendar"
 	"github.com/rnm/heromail/backend/internal/email"
+	"github.com/rnm/heromail/backend/internal/fcm"
 	"github.com/rnm/heromail/backend/internal/inbound"
 	"github.com/rnm/heromail/backend/internal/maildomain"
 	smtpprovider "github.com/rnm/heromail/backend/internal/provider/smtp"
+	"github.com/rnm/heromail/backend/internal/push"
 	"github.com/rnm/heromail/backend/internal/ratelimit"
 	"github.com/rnm/heromail/backend/internal/secrets"
 	"github.com/rnm/heromail/backend/internal/storage"
@@ -107,8 +110,23 @@ func main() {
 	go inbound.NewVacationDispatcher(pool, calendarMailer).WithLimiter(calendarLimiter).Run(dispatchCtx)
 	go inbound.NewStore(pool).RunTombstonePruner(dispatchCtx)
 
+	// Push notifications (docs/mobile-api.md). Without FCM_CREDENTIALS the
+	// worker still starts; queued pushes are acknowledged and dropped.
+	var pushSender push.Sender
+	if client, err := fcm.FromEnv(); err == nil {
+		pushSender = client
+		log.Printf("push: sending through FCM project %s", client.ProjectID())
+	} else if !errors.Is(err, fcm.ErrNotConfigured) {
+		log.Fatalf("fcm: %v", err)
+	} else {
+		log.Print("push: FCM_CREDENTIALS is not set, push notifications are off")
+	}
+	notifier := push.NewNotifier(pool, pushSender)
+	go notifier.ListenChanges(dispatchCtx, 2*time.Second)
+
 	mux := asynq.NewServeMux()
 	mux.HandleFunc(email.TypeSend, worker.HandleSend)
+	mux.HandleFunc(push.TypeNewMessage, notifier.HandleNewMessageTask)
 
 	// Shut down on a signal so in-flight deliveries finish instead of being
 	// killed mid-conversation with a mail server.
