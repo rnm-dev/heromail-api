@@ -192,11 +192,11 @@ func TestListAndRevokeSessions(t *testing.T) {
 	for _, s := range list.Sessions {
 		found[s.Id.String()] = s
 	}
-	if s, ok := found[web.SessionId.String()]; !ok || !s.Current || s.Client != Web {
+	if s, ok := found[web.SessionId.String()]; !ok || !s.Current || s.Client != SessionClientWeb {
 		t.Fatalf("web session in list: %+v", s)
 	}
 	p, ok := found[phone.SessionId.String()]
-	if !ok || p.Current || p.Client != Android || deref(p.DeviceName) != "Pixel 9" || deref(p.AppVersion) != "1.0.0" {
+	if !ok || p.Current || p.Client != SessionClientAndroid || deref(p.DeviceName) != "Pixel 9" || deref(p.AppVersion) != "1.0.0" {
 		t.Fatalf("phone session in list: %+v", p)
 	}
 

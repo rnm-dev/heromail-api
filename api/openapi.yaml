@@ -964,6 +964,46 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /devices/push:
+    put:
+      tags: [auth]
+      operationId: registerPushDevice
+      summary: Register this session's FCM token
+      description: |
+        Upserts the push registration of the current session — one token per
+        session (one app install). A token already registered by another
+        session, including another user's, moves to this one: a token belongs
+        to exactly one session. Re-registering clears a previous `disabled`
+        mark (FCM `UNREGISTERED`).
+
+        The registration disappears when the session ends — logout,
+        `DELETE /auth/sessions/{id}`, refresh-token reuse, password change or
+        reset.
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PushRegistration' }
+      responses:
+        '200':
+          description: Registered
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PushDevice' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    delete:
+      tags: [auth]
+      operationId: unregisterPushDevice
+      summary: Stop push notifications for this session
+      description: Idempotent — answers 204 whether or not anything was registered.
+      security: [{ session: [] }]
+      responses:
+        '204':
+          description: No registration remains for this session
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /workspaces:
     get:
       tags: [workspaces]
@@ -2532,6 +2572,43 @@ components:
           nullable: true
           description: Stamped at most every 5 minutes, and on every refresh.
         expires_at: { type: string, format: date-time }
+
+    PushRegistration:
+      type: object
+      required: [token, platform]
+      additionalProperties: false
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: FCM registration token (iOS too — APNs goes through Firebase).
+        platform: { type: string, enum: [ios, android] }
+        provider:
+          type: string
+          enum: [fcm]
+          default: fcm
+        locale: { type: string, maxLength: 35, example: ru-KZ }
+        timezone: { type: string, maxLength: 64, example: Asia/Almaty }
+        app_version: { type: string, maxLength: 50 }
+
+    PushDevice:
+      type: object
+      required: [id, session_id, platform, provider, disabled, created_at, last_seen_at]
+      description: A registration. The token itself is never echoed back.
+      properties:
+        id: { type: string, format: uuid }
+        session_id: { type: string, format: uuid }
+        platform: { type: string, enum: [ios, android] }
+        provider: { type: string, enum: [fcm] }
+        locale: { type: string, nullable: true }
+        timezone: { type: string, nullable: true }
+        app_version: { type: string, nullable: true }
+        disabled:
+          type: boolean
+          description: FCM reported the token as no longer valid; nothing is sent until it is re-registered.
+        created_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
 
     DeviceSessionList:
       type: object
