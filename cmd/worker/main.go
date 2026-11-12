@@ -105,6 +105,7 @@ func main() {
 	go calendar.NewDispatcher(pool, calendarMailer).WithLimiter(calendarLimiter).Run(dispatchCtx)
 	go calendar.NewCopyReminders(calendar.NewStore(pool), calendarMailer).Run(dispatchCtx)
 	go inbound.NewVacationDispatcher(pool, calendarMailer).WithLimiter(calendarLimiter).Run(dispatchCtx)
+	go inbound.NewStore(pool).RunTombstonePruner(dispatchCtx)
 
 	mux := asynq.NewServeMux()
 	mux.HandleFunc(email.TypeSend, worker.HandleSend)

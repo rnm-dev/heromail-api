@@ -1651,6 +1651,66 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /workspaces/{slug}/mailboxes/{mailboxId}/changes:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema: { $ref: '#/components/schemas/Slug' }
+      - name: mailboxId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [inbound]
+      operationId: listMailboxChanges
+      summary: Changes to a mailbox since a cursor (delta sync)
+      description: |
+        Returns messages created or changed (flags, folder, labels, category)
+        and ids deleted after `cursor`, oldest change first, in the same card
+        shape as the message list minus `html`. A message appears once per
+        page with its current state, however many times it changed.
+
+        Every write path is covered — web, IMAP, LMTP delivery and automation
+        rules — because changes are numbered by database triggers at commit.
+
+        Sync protocol:
+
+        1. Call without `cursor` and keep `next_cursor`.
+        2. Fetch the full lists you cache.
+        3. Call with the kept cursor; apply, store `next_cursor`, repeat while
+           `has_more`. Changes made between steps 1 and 2 are simply applied
+           again, which is harmless because each item is the current state.
+
+        `organization_changed` means folder or label definitions changed:
+        refetch `/organization`. `unread` always carries current per-folder
+        unread counts.
+
+        `410 cursor_expired` — unknown, foreign or too old cursor (deletions
+        are kept 30 days): drop the cache and resync from step 1.
+      security: [{ session: [] }]
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 200 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 200 }
+      responses:
+        '200':
+          description: A page of changes
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailboxChanges' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410':
+          description: The cursor cannot be served; resync from scratch
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /workspaces/{slug}/mailboxes/{mailboxId}/messages:
     parameters:
       - name: slug
@@ -2609,6 +2669,38 @@ components:
           description: FCM reported the token as no longer valid; nothing is sent until it is re-registered.
         created_at: { type: string, format: date-time }
         last_seen_at: { type: string, format: date-time }
+
+    MailboxChanges:
+      type: object
+      required: [messages, deleted, next_cursor, has_more, organization_changed, unread]
+      properties:
+        messages:
+          type: array
+          items: { $ref: '#/components/schemas/ChangedMessage' }
+        deleted:
+          type: array
+          description: Ids of messages deleted since the cursor.
+          items: { type: string, format: uuid }
+        next_cursor:
+          type: string
+          description: Opaque. Pass it back as `cursor`.
+        has_more: { type: boolean }
+        organization_changed:
+          type: boolean
+          description: Folder or label definitions changed; refetch `/organization`.
+        unread:
+          type: object
+          description: Current unread count per folder.
+          additionalProperties: { type: integer }
+
+    ChangedMessage:
+      type: object
+      required: [message, label_ids]
+      properties:
+        message: { $ref: '#/components/schemas/ReceivedMessage' }
+        label_ids:
+          type: array
+          items: { type: string, format: uuid }
 
     DeviceSessionList:
       type: object
