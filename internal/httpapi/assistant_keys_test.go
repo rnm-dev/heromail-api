@@ -266,7 +266,7 @@ func TestAssistantCalendar(t *testing.T) {
 	if rec := call("POST", "/assistant/invite-reply", fmt.Sprintf(`{"uid":%d,"response":"accepted"}`, uid), issued.Key); rec.Code != 400 {
 		t.Fatalf("non-invite reply: %d %s", rec.Code, rec.Body)
 	}
-	if rec := call("POST", "/assistant/invite-reply", `{"uid":1,"response":"accepted"}`, issued.Key); rec.Code != 404 {
+	if rec := call("POST", "/assistant/invite-reply", `{"uid":4294967000,"response":"accepted"}`, issued.Key); rec.Code != 404 {
 		t.Fatalf("foreign uid: %d", rec.Code)
 	}
 }

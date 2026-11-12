@@ -42,6 +42,8 @@ type Input struct {
 	// skipped occurrence dates (YYYY-MM-DD) in the event's zone.
 	RRule   string   `json:"rrule"`
 	Exdates []string `json:"exdates"`
+	// Color is a label from a fixed palette, "" for the default.
+	Color string `json:"color"`
 }
 type Attendee struct {
 	Email    string `json:"email"`
@@ -157,6 +159,11 @@ func Validate(in Input) (Input, time.Time, time.Time, error) {
 		in.Exdates = append(in.Exdates, d)
 	}
 	sort.Strings(in.Exdates)
+	switch in.Color {
+	case "", "blue", "green", "red", "orange", "purple", "gray":
+	default:
+		return in, start, end, invalid("Неизвестный цвет события")
+	}
 	if in.ReminderMinutes != 0 && in.ReminderMinutes != 10 && in.ReminderMinutes != 30 && in.ReminderMinutes != 60 {
 		return in, start, end, invalid("Напоминание должно быть выключено или за 10, 30, 60 минут")
 	}
@@ -206,7 +213,7 @@ func (s *Store) Settings(ctx context.Context, ws, user string, zone *string) (Se
 	return out, err
 }
 
-const columns = `e.id,e.title,e.description,e.location,e.timezone,e.all_day,e.start_at,e.end_at,e.start_date::text,e.end_date::text,e.version,e.organizer_email,e.uid,e.sequence,e.status,e.reminder_minutes,e.updated_at,e.rrule,e.exdates`
+const columns = `e.id,e.title,e.description,e.location,e.timezone,e.all_day,e.start_at,e.end_at,e.start_date::text,e.end_date::text,e.version,e.organizer_email,e.uid,e.sequence,e.status,e.reminder_minutes,e.updated_at,e.rrule,e.exdates,e.color`
 
 func scan(row pgx.Row) (Event, error) {
 	return scanRecord(row, false)
@@ -215,7 +222,7 @@ func scanList(row pgx.Row) (Event, error) { return scanRecord(row, true) }
 func scanRecord(row pgx.Row, list bool) (Event, error) {
 	var out Event
 	var start, end *string
-	dest := []any{&out.ID, &out.Title, &out.Description, &out.Location, &out.Timezone, &out.AllDay, &out.StartAt, &out.EndAt, &start, &end, &out.Version, &out.Organizer, &out.UID, &out.Sequence, &out.Status, &out.ReminderMinutes, &out.UpdatedAt, &out.RRule, &out.Exdates}
+	dest := []any{&out.ID, &out.Title, &out.Description, &out.Location, &out.Timezone, &out.AllDay, &out.StartAt, &out.EndAt, &start, &end, &out.Version, &out.Organizer, &out.UID, &out.Sequence, &out.Status, &out.ReminderMinutes, &out.UpdatedAt, &out.RRule, &out.Exdates, &out.Color}
 	var recipient, response string
 	var sortAt time.Time
 	if list {
@@ -274,7 +281,7 @@ func (s *Store) List(ctx context.Context, ws, user, from, to string, offset int)
 		WHERE c.workspace_id=$1 AND c.user_id=$2
 		AND ((e.rrule='' AND ((e.all_day AND e.start_date<$4::date AND e.end_date>$3::date) OR (NOT e.all_day AND e.start_at<$6 AND e.end_at>$5))) OR (e.rrule<>'' AND coalesce(e.start_at,e.start_date::timestamptz)<$6+interval '1 day' AND (e.series_until IS NULL OR e.series_until>$5-interval '1 day')))
 		UNION ALL
-		SELECT x.id,x.title,x.description,x.location,x.timezone,x.all_day,x.start_at,x.end_at,x.start_date::text,x.end_date::text,1,x.organizer_email,x.uid,x.sequence,'confirmed'::text,x.reminder_minutes,x.updated_at,x.rrule,x.exdates,
+		SELECT x.id,x.title,x.description,x.location,x.timezone,x.all_day,x.start_at,x.end_at,x.start_date::text,x.end_date::text,1,x.organizer_email,x.uid,x.sequence,'confirmed'::text,x.reminder_minutes,x.updated_at,x.rrule,x.exdates,''::text,
 		'attendee'::text,''::text,x.attendee,x.response,coalesce(x.start_at,x.start_date::timestamp AT TIME ZONE 'UTC')
 		FROM calendar_external_events x JOIN calendars c ON c.id=x.calendar_id
 		WHERE c.workspace_id=$1 AND c.user_id=$2
@@ -342,7 +349,7 @@ func (s *Store) Save(ctx context.Context, ws, user, id string, in Input) (Event,
 		if err != nil {
 			return Event{}, err
 		}
-		out, err = scan(tx.QueryRow(ctx, `INSERT INTO calendar_events AS e(calendar_id,title,description,location,timezone,all_day,start_at,end_at,start_date,end_date,organizer_email,reminder_minutes,rrule,exdates,series_until) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING `+columns, cal, in.Title, in.Description, in.Location, in.Timezone, in.AllDay, at, until, day, last, in.Organizer, in.ReminderMinutes, in.RRule, in.Exdates, seriesUntil))
+		out, err = scan(tx.QueryRow(ctx, `INSERT INTO calendar_events AS e(calendar_id,title,description,location,timezone,all_day,start_at,end_at,start_date,end_date,organizer_email,reminder_minutes,rrule,exdates,series_until,color) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING `+columns, cal, in.Title, in.Description, in.Location, in.Timezone, in.AllDay, at, until, day, last, in.Organizer, in.ReminderMinutes, in.RRule, in.Exdates, seriesUntil, in.Color))
 		if err != nil {
 			return Event{}, err
 		}
@@ -377,7 +384,7 @@ func (s *Store) Save(ctx context.Context, ws, user, id string, in Input) (Event,
 		if changed {
 			bump = 1
 		}
-		out, err = scan(tx.QueryRow(ctx, `UPDATE calendar_events e SET title=$4,description=$5,location=$6,timezone=$7,all_day=$8,start_at=$9,end_at=$10,start_date=$11,end_date=$12,organizer_email=$14,reminder_minutes=$15,rrule=$17,exdates=$18,series_until=$19,version=e.version+1,sequence=e.sequence+$16,updated_at=now() FROM calendars c WHERE e.calendar_id=c.id AND c.workspace_id=$1 AND c.user_id=$2 AND e.id=$3 AND e.version=$13 RETURNING `+columns, ws, user, id, in.Title, in.Description, in.Location, in.Timezone, in.AllDay, at, until, day, last, in.Version, in.Organizer, in.ReminderMinutes, bump, in.RRule, in.Exdates, seriesUntil))
+		out, err = scan(tx.QueryRow(ctx, `UPDATE calendar_events e SET title=$4,description=$5,location=$6,timezone=$7,all_day=$8,start_at=$9,end_at=$10,start_date=$11,end_date=$12,organizer_email=$14,reminder_minutes=$15,rrule=$17,exdates=$18,series_until=$19,color=$20,version=e.version+1,sequence=e.sequence+$16,updated_at=now() FROM calendars c WHERE e.calendar_id=c.id AND c.workspace_id=$1 AND c.user_id=$2 AND e.id=$3 AND e.version=$13 RETURNING `+columns, ws, user, id, in.Title, in.Description, in.Location, in.Timezone, in.AllDay, at, until, day, last, in.Version, in.Organizer, in.ReminderMinutes, bump, in.RRule, in.Exdates, seriesUntil, in.Color))
 		if err != nil {
 			return Event{}, err
 		}

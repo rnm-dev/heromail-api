@@ -150,3 +150,32 @@ func (s *Server) calendarCopyReminder(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
+
+var calendarSearchPath = regexp.MustCompile(`^/workspaces/([^/]+)/calendar/search$`)
+
+// calendarSearch serves GET /workspaces/{slug}/calendar/search?q= behind a session.
+func (s *Server) calendarSearch(w http.ResponseWriter, r *http.Request) {
+	m := calendarSearchPath.FindStringSubmatch(r.URL.Path)
+	if r.Method != http.MethodGet {
+		writeErrorEnvelope(w, http.StatusMethodNotAllowed, "method_not_allowed", "use GET")
+		return
+	}
+	ws, _, err := s.scope(r.Context(), m[1], workspace.RoleMember)
+	if err != nil {
+		writeErrorEnvelope(w, http.StatusNotFound, "not_found", "workspace not found")
+		return
+	}
+	user, _ := account.CurrentUser(r.Context())
+	events, err := calendar.NewStore(s.pool).Search(r.Context(), ws, user.ID, r.URL.Query().Get("q"))
+	var verr calendar.ValidationError
+	if errors.As(err, &verr) {
+		writeErrorEnvelope(w, http.StatusBadRequest, "validation_failed", verr.Message)
+		return
+	}
+	if err != nil {
+		writeErrorEnvelope(w, http.StatusInternalServerError, "internal", "internal server error")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"events": events})
+}
