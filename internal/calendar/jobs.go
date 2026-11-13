@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rnm/heromail/backend/internal/account"
 	"github.com/rnm/heromail/backend/internal/email"
 	"github.com/rnm/heromail/backend/internal/ratelimit"
 )
@@ -147,8 +148,8 @@ func (d *Dispatcher) process(ctx context.Context, j job) error {
 			return d.skip(ctx, tx, j.ID)
 		}
 	}
-	var ws string
-	err = tx.QueryRow(ctx, `SELECT c.workspace_id FROM calendars c JOIN calendar_events e ON e.calendar_id=c.id WHERE e.id=$1`, e.ID).Scan(&ws)
+	var ws, owner string
+	err = tx.QueryRow(ctx, `SELECT c.workspace_id, c.user_id::text FROM calendars c JOIN calendar_events e ON e.calendar_id=c.id WHERE e.id=$1`, e.ID).Scan(&ws, &owner)
 	if err != nil {
 		return err
 	}
@@ -220,7 +221,9 @@ func (d *Dispatcher) process(ctx context.Context, j job) error {
 		}
 		req.CalendarICS = buildICS(e, method, attendee, j.Response)
 	}
-	msg, err := d.emails.Send(ctx, ws, "calendar-job-"+j.ID, req)
+	// The sender guard admits a private mailbox only for its owner, so send as
+	// the calendar owner already checked above, not as an anonymous worker.
+	msg, err := d.emails.Send(account.ContextWithUser(ctx, &account.User{ID: owner}), ws, "calendar-job-"+j.ID, req)
 	if err != nil {
 		return err
 	}
