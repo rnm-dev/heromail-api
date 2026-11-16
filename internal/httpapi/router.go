@@ -67,6 +67,7 @@ func Router(server *Server, apiKeys *auth.Authenticator, accounts *account.Servi
 
 	sessionGuarded := accounts.RequireSession(generated)
 	apiKeyGuarded := apiKeys.Middleware(generated)
+	mcp := server.mcpHandler(accounts, generated)
 
 	root := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
@@ -101,6 +102,22 @@ func Router(server *Server, apiKeys *auth.Authenticator, accounts *account.Servi
 			accounts.RequireSession(http.HandlerFunc(server.calendarBusy)).ServeHTTP(w, r)
 		case calendarFeedSettingsPath.MatchString(path):
 			accounts.RequireSession(http.HandlerFunc(server.calendarFeedSettings)).ServeHTTP(w, r)
+		case path == "/.well-known/oauth-protected-resource", path == "/.well-known/oauth-protected-resource/mcp":
+			server.oauthResourceMetadata(w, r)
+		case path == "/.well-known/oauth-authorization-server":
+			server.oauthServerMetadata(w, r)
+		case path == "/oauth/register":
+			server.oauthRegister(w, r)
+		case path == "/oauth/token":
+			server.oauthToken(w, r)
+		case path == "/oauth/client":
+			accounts.RequireSession(http.HandlerFunc(server.oauthClientInfo)).ServeHTTP(w, r)
+		case path == "/oauth/approve":
+			accounts.RequireSession(http.HandlerFunc(server.oauthApprove)).ServeHTTP(w, r)
+		case path == "/oauth/grants", strings.HasPrefix(path, "/oauth/grants/"):
+			accounts.RequireSession(http.HandlerFunc(server.oauthGrants)).ServeHTTP(w, r)
+		case path == "/mcp":
+			mcp.ServeHTTP(w, r)
 		case path == "/.well-known/apple-app-site-association", path == "/.well-known/assetlinks.json":
 			server.appLinkFile(w, r)
 		case path == "/account-deletion":
@@ -164,8 +181,8 @@ func clientIP(r *http.Request) string {
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key, If-Match, If-None-Match, If-Range, Range, X-Client, X-App-Version")
-		w.Header().Set("Access-Control-Expose-Headers", "Content-Disposition, Content-Range, Accept-Ranges, ETag, Retry-After")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Mcp-Protocol-Version, Mcp-Session-Id, Idempotency-Key, If-Match, If-None-Match, If-Range, Range, X-Client, X-App-Version")
+		w.Header().Set("Access-Control-Expose-Headers", "Content-Disposition, Content-Range, Accept-Ranges, ETag, Retry-After, WWW-Authenticate, Mcp-Session-Id")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

@@ -112,6 +112,8 @@ func (s *Service) DeleteAccount(ctx context.Context, userID, password string) (*
 		`DELETE FROM identities WHERE user_id = $1`,
 		`DELETE FROM user_tokens WHERE user_id = $1`,
 		`DELETE FROM mailbox_assistant_keys WHERE user_id = $1`,
+		`DELETE FROM oauth_grants WHERE user_id = $1`,
+		`DELETE FROM oauth_codes WHERE user_id = $1`,
 		`DELETE FROM mailbox_smtp_credentials WHERE issued_by = $1`,
 		`DELETE FROM contacts WHERE user_id = $1`,
 		`DELETE FROM mail_drafts WHERE user_id = $1`,
