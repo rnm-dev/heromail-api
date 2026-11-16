@@ -161,4 +161,20 @@ func TestComposeAttachmentUpload(t *testing.T) {
 	if !ok || len(m.Attachments) != 1 || m.Attachments[0].Filename != "hello.txt" {
 		t.Fatalf("missing attachment: %+v", m)
 	}
+
+	// The sender downloads the file back from Sent; any other id is a 404.
+	file := "/workspaces/" + slug + "/emails/" + queued.ID + "/attachments/"
+	r = h.do("GET", file+a.ID, "", token)
+	if r.Code != 200 || r.Body.String() != "attachment bytes" || r.Header().Get("Content-Type") != "application/octet-stream" ||
+		!strings.HasPrefix(r.Header().Get("Content-Disposition"), "attachment") || r.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("download sent attachment: %d %q %v", r.Code, r.Body, r.Header())
+	}
+	for _, route := range []string{file + "00000000-0000-0000-0000-000000000000", "/workspaces/" + slug + "/emails/00000000-0000-0000-0000-000000000000/attachments/" + a.ID} {
+		if r = h.do("GET", route, "", token); r.Code != 404 {
+			t.Fatalf("%s: %d", route, r.Code)
+		}
+	}
+	if r = h.do("GET", file+a.ID, "", ""); r.Code != 401 {
+		t.Fatalf("anonymous sent attachment: %d", r.Code)
+	}
 }

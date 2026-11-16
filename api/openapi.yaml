@@ -483,6 +483,38 @@ paths:
               schema: { $ref: '#/components/schemas/Email' }
         '404': { $ref: '#/components/responses/NotFound' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+  /workspaces/{slug}/emails/{id}/attachments/{attachmentId}:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { type: string } }
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: attachmentId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: downloadSentAttachment
+      tags: [emails]
+      summary: Download a file attached to an outgoing message
+      description: |
+        Same access rule as `getWorkspaceEmail`: only someone who may read the
+        sent message gets its files. Always `Content-Disposition: attachment`;
+        `Content-Type` is the declared type for passive content (images, PDF,
+        audio, video, plain text, calendar), else `application/octet-stream`.
+        Supports `Range`, `If-Range`, `If-None-Match` and `HEAD` like
+        `downloadReceivedAttachment`.
+      security: [{ session: [] }]
+      parameters:
+        - { name: Range, in: header, required: false, schema: { type: string, example: 'bytes=0-1048575' } }
+      responses:
+        '200':
+          description: Attachment bytes, forced download
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '206':
+          description: The requested byte range(s)
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
   /workspaces/{slug}/attachments:
     parameters:
       - { name: slug, in: path, required: true, schema: { type: string } }

@@ -290,6 +290,34 @@ func (s *Service) AttachmentsForEmail(ctx context.Context, emailID string) ([]At
 	return s.store.AttachmentsByEmailID(ctx, emailID)
 }
 
+// AttachmentContent returns one file of a message with its bytes. The
+// attachment must belong to emailID; anything else is ErrAttachmentNotFound.
+func (s *Service) AttachmentContent(ctx context.Context, emailID, attachmentID string) (*Attachment, []byte, error) {
+	rows, err := s.store.AttachmentsByEmailID(ctx, emailID)
+	if err != nil {
+		return nil, nil, err
+	}
+	for i := range rows {
+		if rows[i].ID != attachmentID {
+			continue
+		}
+		if s.blobs == nil {
+			return nil, nil, ErrStorageNotConfigured
+		}
+		rc, err := s.blobs.Get(ctx, rows[i].StorageKey)
+		if err != nil {
+			return nil, nil, fmt.Errorf("fetch %s: %w", rows[i].Filename, err)
+		}
+		defer rc.Close()
+		data, err := io.ReadAll(rc)
+		if err != nil {
+			return nil, nil, fmt.Errorf("read %s: %w", rows[i].Filename, err)
+		}
+		return &rows[i], data, nil
+	}
+	return nil, nil, ErrAttachmentNotFound
+}
+
 // UploadAttachment reads r into object storage and records it, unattached.
 //
 // A multipart part carries no reliable Content-Length, so the size is never

@@ -36,7 +36,12 @@ var downloadableTypes = map[string]bool{
 
 // DownloadContentType is the Content-Type to serve the attachment with.
 func (a ReceivedAttachment) DownloadContentType() string {
-	t := strings.ToLower(a.ContentType)
+	return DownloadContentType(a.ContentType)
+}
+
+// DownloadContentType is the type a file may be served as from the API origin.
+func DownloadContentType(contentType string) string {
+	t := strings.ToLower(contentType)
 	if downloadableTypes[t] || strings.HasPrefix(t, "video/") || strings.HasPrefix(t, "audio/") {
 		return t
 	}
