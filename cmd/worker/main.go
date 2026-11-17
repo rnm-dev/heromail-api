@@ -105,7 +105,6 @@ func main() {
 	defer calendarLimiter.Close()
 	dispatchCtx, stopDispatch := context.WithCancel(ctx)
 	defer stopDispatch()
-	go calendar.NewDispatcher(pool, calendarMailer).WithLimiter(calendarLimiter).Run(dispatchCtx)
 	go calendar.NewCopyReminders(calendar.NewStore(pool), calendarMailer).Run(dispatchCtx)
 	go inbound.NewVacationDispatcher(pool, calendarMailer).WithLimiter(calendarLimiter).Run(dispatchCtx)
 	go inbound.NewStore(pool).RunTombstonePruner(dispatchCtx)
@@ -122,6 +121,8 @@ func main() {
 		log.Print("push: FCM_CREDENTIALS is not set, push notifications are off")
 	}
 	notifier := push.NewNotifier(pool, pushSender)
+	go calendar.NewDispatcher(pool, calendarMailer).WithLimiter(calendarLimiter).
+		WithPusher(push.NewCalendarReminders(pool, pushSender)).Run(dispatchCtx)
 	go notifier.ListenChanges(dispatchCtx, 2*time.Second)
 
 	mux := asynq.NewServeMux()

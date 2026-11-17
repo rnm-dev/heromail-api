@@ -29,12 +29,35 @@ type Dispatcher struct {
 	emails  *email.Service
 	store   *Store
 	limiter *ratelimit.Limiter
+	pusher  ReminderPusher
 }
 
 func NewDispatcher(pool *pgxpool.Pool, emails *email.Service) *Dispatcher {
 	return &Dispatcher{pool: pool, emails: emails, store: NewStore(pool)}
 }
 func (d *Dispatcher) WithLimiter(l *ratelimit.Limiter) *Dispatcher { d.limiter = l; return d }
+
+// WithPusher also sends reminders as push notifications to the calendar
+// owner's devices.
+func (d *Dispatcher) WithPusher(p ReminderPusher) *Dispatcher { d.pusher = p; return d }
+
+// Reminder is one push reminder about an occurrence, addressed to the owner of
+// the calendar. StartAt is set for timed events, StartDate for all-day ones.
+type Reminder struct {
+	EventID, WorkspaceID, OwnerID string
+	Title, Location               string
+	StartAt                       *time.Time
+	StartDate                     string
+}
+
+// ReminderPusher delivers a Reminder (push.CalendarReminders). An error means
+// nothing was delivered and the job should be retried.
+type ReminderPusher interface {
+	PushReminder(ctx context.Context, r Reminder) error
+}
+
+// reminderGrace is how late after the start a reminder is still worth sending.
+const reminderGrace = 5 * time.Minute
 
 type quotaWait struct{ after time.Duration }
 
@@ -156,36 +179,17 @@ func (d *Dispatcher) process(ctx context.Context, j job) error {
 	if e.RoomID != "" {
 		e = withRoom(e, d.store.roomNames(ctx, ws))
 	}
-	var allowed bool
-	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM mailboxes m JOIN domains dom ON dom.id=m.domain_id
-		JOIN workspaces w ON w.id=coalesce(m.personal_workspace_id,dom.workspace_id)
-		JOIN calendar_events ev ON ev.id=$3 JOIN calendars c ON c.id=ev.calendar_id
-		WHERE w.id=$1 AND lower(m.local_part||'@'||dom.domain)=lower($2)
-		AND dom.verified_at IS NOT NULL AND ((coalesce(m.owner_user_id,w.personal_owner_id) IS NULL AND NOT EXISTS(SELECT 1 FROM mailbox_members mx WHERE mx.mailbox_id=m.id)) OR coalesce(m.owner_user_id,w.personal_owner_id)=c.user_id OR EXISTS(SELECT 1 FROM mailbox_members mm WHERE mm.mailbox_id=m.id AND mm.user_id=c.user_id)))`, ws, e.Organizer, e.ID).Scan(&allowed)
-	if err != nil {
+	if j.Kind == "reminder" {
+		return d.remind(ctx, tx, j, e, ws, owner)
+	}
+	if err = d.mayMail(ctx, tx, ws, e); err != nil {
 		return err
-	}
-	if !allowed {
-		return fmt.Errorf("organizer mailbox is no longer available")
-	}
-	if d.limiter != nil {
-		for _, rule := range []ratelimit.Rule{{Name: "send:minute", Limit: quotaLimit("SEND_LIMIT_PER_MINUTE", 60), Window: time.Minute}, {Name: "send:day", Limit: quotaLimit("SEND_LIMIT_PER_DAY", 5000), Window: 24 * time.Hour}} {
-			res := d.limiter.AllowStrict(ctx, rule, ws)
-			if !res.Allowed {
-				return quotaWait{after: res.RetryAfter}
-			}
-		}
 	}
 	method := "REQUEST"
 	subject := "Приглашение: " + e.Title
 	if j.Kind == "cancel" {
 		method = "CANCEL"
 		subject = "Отмена встречи: " + e.Title
-	}
-	series := e
-	if j.Kind == "reminder" {
-		subject = "Напоминание: " + e.Title
-		e = atOccurrence(e, time.Unix(int64(j.ResponseVersion)*60, 0))
 	}
 	if j.Kind == "reply" {
 		method = "REPLY"
@@ -231,14 +235,109 @@ func (d *Dispatcher) process(ctx context.Context, j job) error {
 	if err != nil {
 		return err
 	}
-	if j.Kind == "reminder" && series.RRule != "" {
-		if next, ok := nextReminder(series, time.Unix(int64(j.ResponseVersion)*60, 0)); ok {
-			if err = d.store.addReminder(ctx, tx, series, next); err != nil {
+	return tx.Commit(ctx)
+}
+
+// errNoOrganizerMailbox means the organizer address can no longer send for
+// the calendar owner.
+var errNoOrganizerMailbox = errors.New("organizer mailbox is no longer available")
+
+// mayMail checks that the calendar owner may still send as the organizer and
+// that the workspace has send quota left.
+func (d *Dispatcher) mayMail(ctx context.Context, tx pgx.Tx, ws string, e Event) error {
+	var allowed bool
+	err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM mailboxes m JOIN domains dom ON dom.id=m.domain_id
+		JOIN workspaces w ON w.id=coalesce(m.personal_workspace_id,dom.workspace_id)
+		JOIN calendar_events ev ON ev.id=$3 JOIN calendars c ON c.id=ev.calendar_id
+		WHERE w.id=$1 AND lower(m.local_part||'@'||dom.domain)=lower($2)
+		AND dom.verified_at IS NOT NULL AND ((coalesce(m.owner_user_id,w.personal_owner_id) IS NULL AND NOT EXISTS(SELECT 1 FROM mailbox_members mx WHERE mx.mailbox_id=m.id)) OR coalesce(m.owner_user_id,w.personal_owner_id)=c.user_id OR EXISTS(SELECT 1 FROM mailbox_members mm WHERE mm.mailbox_id=m.id AND mm.user_id=c.user_id)))`, ws, e.Organizer, e.ID).Scan(&allowed)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return errNoOrganizerMailbox
+	}
+	if d.limiter != nil {
+		for _, rule := range []ratelimit.Rule{{Name: "send:minute", Limit: quotaLimit("SEND_LIMIT_PER_MINUTE", 60), Window: time.Minute}, {Name: "send:day", Limit: quotaLimit("SEND_LIMIT_PER_DAY", 5000), Window: 24 * time.Hour}} {
+			res := d.limiter.AllowStrict(ctx, rule, ws)
+			if !res.Allowed {
+				return quotaWait{after: res.RetryAfter}
+			}
+		}
+	}
+	return nil
+}
+
+// remind mails the organizer (when there is one) and pushes to the calendar
+// owner's devices. A retry re-sends the mail under the same idempotency key;
+// the push is only retried when no device got it. A reminder later than
+// reminderGrace after the start is dropped. Series schedule their next one.
+func (d *Dispatcher) remind(ctx context.Context, tx pgx.Tx, j job, series Event, ws, owner string) error {
+	at := time.Unix(int64(j.ResponseVersion)*60, 0)
+	e := atOccurrence(series, at)
+	status, emailID := "queued", (*string)(nil)
+	if start := occurrenceStart(e); time.Now().After(start.Add(reminderGrace)) {
+		status = "skipped"
+	} else {
+		if e.Organizer != "" {
+			switch err := d.mayMail(ctx, tx, ws, e); {
+			case errors.Is(err, errNoOrganizerMailbox) && d.pusher != nil:
+				log.Printf("calendar reminder %s: %v; push only", j.ID, err)
+			case err != nil:
+				return err
+			default:
+				text := e.Title + "\n" + HumanRange(e)
+				if e.Location != "" {
+					text += "\nМесто: " + e.Location
+				}
+				if e.Description != "" {
+					text += "\n\n" + e.Description
+				}
+				req := email.SendRequest{From: e.Organizer, To: []string{j.Recipient}, Subject: "Напоминание: " + e.Title, Text: text}
+				msg, err := d.emails.Send(account.ContextWithUser(ctx, &account.User{ID: owner}), ws, "calendar-job-"+j.ID, req)
+				if err != nil {
+					return err
+				}
+				emailID = &msg.ID
+			}
+		}
+		if d.pusher != nil {
+			r := Reminder{EventID: e.ID, WorkspaceID: ws, OwnerID: owner, Title: e.Title, Location: e.Location}
+			if e.AllDay {
+				r.StartDate = e.Start
+			} else {
+				r.StartAt = e.StartAt
+			}
+			if err := d.pusher.PushReminder(ctx, r); err != nil {
+				return fmt.Errorf("reminder push: %w", err)
+			}
+		}
+	}
+	if _, err := tx.Exec(ctx, `UPDATE calendar_jobs SET status=$2,email_id=$3,last_error=NULL,updated_at=now() WHERE id=$1`, j.ID, status, emailID); err != nil {
+		return err
+	}
+	if series.RRule != "" {
+		if next, ok := nextReminder(series, at); ok {
+			if err := d.store.addReminder(ctx, tx, series, next); err != nil {
 				return err
 			}
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+// occurrenceStart is when the occurrence begins; for all-day events the 09:00
+// their reminders count from, so a morning reminder is not already late.
+func occurrenceStart(e Event) time.Time {
+	if !e.AllDay && e.StartAt != nil {
+		return *e.StartAt
+	}
+	loc, err := Zone(e.Timezone)
+	if err != nil {
+		loc = time.UTC
+	}
+	t, _ := time.ParseInLocation("2006-01-02", e.Start, loc)
+	return t.Add(9 * time.Hour)
 }
 func (d *Dispatcher) skip(ctx context.Context, tx pgx.Tx, id string) error {
 	_, err := tx.Exec(ctx, `UPDATE calendar_jobs SET status='skipped',updated_at=now() WHERE id=$1`, id)

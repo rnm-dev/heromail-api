@@ -1112,6 +1112,11 @@ paths:
         These settings decide only the visible new-mail push. The silent
         `type: sync` push is never muted, so the app stays in sync and the
         badge stays right even for a muted mailbox.
+
+        Meeting reminders (`type: calendar_reminder`, see
+        `CalendarReminderPush`) follow `enabled` and `privacy` but ignore
+        `quiet_hours` and the per-mailbox switches: the user set the reminder
+        for that time.
       security: [{ session: [] }]
       responses:
         '200':
@@ -2645,7 +2650,14 @@ components:
         version: { type: integer, minimum: 0, description: 0 on create; current version on update }
         organizer: { type: string, format: email }
         attendees: { type: array, maxItems: 20, items: { type: string, format: email } }
-        reminder_minutes: { type: integer, enum: [0, 10, 30, 60] }
+        reminder_minutes:
+          type: integer
+          enum: [0, 10, 30, 60]
+          description: |
+            Minutes before the start (before 09:00 for all-day events). Works
+            without an organizer: the calendar owner gets a push
+            (`CalendarReminderPush`); with an organizer the reminder e-mail is
+            sent as well.
     CalendarEvent:
       type: object
       x-go-type: calendar.Event
@@ -2913,6 +2925,32 @@ components:
         label_ids:
           type: array
           items: { type: string, format: uuid }
+
+    CalendarReminderPush:
+      type: object
+      description: |
+        FCM `data` of a meeting reminder, sent to every active device of the
+        calendar owner at the reminder time. Not an HTTP response; described
+        here as the contract for the mobile app. All values are strings.
+
+        The visible part: title is the meeting title, body is
+        `через 10 мин · <location>` (`сегодня, весь день` for all-day events).
+        In privacy mode the title is `Встреча через N мин`, the body
+        `Напоминание о встрече`, and `title`/`location` are left out of data.
+        Android channel id `calendar_reminders`, tag `reminder-<event_id>`;
+        iOS `interruption-level: time-sensitive`, `apns-collapse-id`
+        `reminder-<event_id>`. Quiet hours do not apply. A reminder that
+        cannot be delivered more than 5 minutes after the start is dropped;
+        a moved or cancelled event never sends the old one.
+      required: [type, event_id, workspace_id]
+      properties:
+        type: { type: string, enum: [calendar_reminder] }
+        event_id: { type: string, format: uuid }
+        workspace_id: { type: string, format: uuid }
+        start_at: { type: string, format: date-time, description: UTC start of the occurrence; timed events only }
+        start_date: { type: string, format: date, description: Day of the occurrence; all-day events only }
+        title: { type: string, description: Absent in privacy mode }
+        location: { type: string, description: Place or meeting link (e.g. Google Meet); absent when empty or in privacy mode }
 
     QuietHours:
       type: object

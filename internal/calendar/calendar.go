@@ -180,7 +180,7 @@ func Validate(in Input) (Input, time.Time, time.Time, error) {
 	if in.Organizer != "" && !plainAddress(in.Organizer) {
 		return in, start, end, invalid("Проверьте адрес организатора")
 	}
-	if len(in.Attendees) > 20 || ((len(in.Attendees) > 0 || in.ReminderMinutes > 0) && in.Organizer == "") {
+	if len(in.Attendees) > 20 || (len(in.Attendees) > 0 && in.Organizer == "") {
 		return in, start, end, invalid("Для приглашений выберите организатора и не более 20 участников")
 	}
 	seen := make(map[string]bool, len(in.Attendees))
@@ -455,7 +455,9 @@ func (s *Store) Save(ctx context.Context, ws, user, id string, in Input) (Event,
 	if _, err = tx.Exec(ctx, `DELETE FROM calendar_attendees WHERE event_id=$1 AND NOT(email=ANY($2::text[]))`, out.ID, in.Attendees); err != nil {
 		return Event{}, err
 	}
-	if out.ReminderMinutes > 0 && out.Organizer != "" {
+	// Personal events without an organizer remind too: by push to the
+	// calendar owner, the e-mail only goes when there is an organizer.
+	if out.ReminderMinutes > 0 {
 		if at, ok := nextReminder(out, time.Now()); ok {
 			if err = s.addReminder(ctx, tx, out, at); err != nil {
 				return Event{}, err
