@@ -40,11 +40,13 @@ type MailboxSettings struct {
 
 // Settings is the whole document a user edits.
 type Settings struct {
-	Version   int
-	Enabled   bool
-	Privacy   bool
-	Quiet     *QuietHours
-	Mailboxes []MailboxSettings
+	Version int
+	Enabled bool
+	Privacy bool
+	// CalendarReminders switches meeting reminder pushes.
+	CalendarReminders bool
+	Quiet             *QuietHours
+	Mailboxes         []MailboxSettings
 }
 
 // Defaults: everything on, people only, no privacy mode, no quiet hours —
@@ -57,11 +59,11 @@ func defaultMailbox(m inbound.ReadableMailbox) MailboxSettings {
 // Settings returns the user's settings with every readable mailbox listed,
 // defaults filled in for mailboxes never configured.
 func (s *Store) Settings(ctx context.Context, userID string) (*Settings, error) {
-	out := &Settings{Enabled: true}
+	out := &Settings{Enabled: true, CalendarReminders: true}
 	var start, end, tz *string
-	err := s.pool.QueryRow(ctx, `SELECT version, enabled, privacy, to_char(quiet_start, 'HH24:MI'), to_char(quiet_end, 'HH24:MI'), timezone
+	err := s.pool.QueryRow(ctx, `SELECT version, enabled, privacy, calendar_reminders, to_char(quiet_start, 'HH24:MI'), to_char(quiet_end, 'HH24:MI'), timezone
 		FROM notification_settings WHERE user_id = $1`, userID).
-		Scan(&out.Version, &out.Enabled, &out.Privacy, &start, &end, &tz)
+		Scan(&out.Version, &out.Enabled, &out.Privacy, &out.CalendarReminders, &start, &end, &tz)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}
@@ -112,11 +114,13 @@ type MailboxUpdate struct {
 
 // SettingsUpdate replaces the global switches and the listed mailboxes.
 type SettingsUpdate struct {
-	Version   int
-	Enabled   bool
-	Privacy   bool
-	Quiet     *QuietHours
-	Mailboxes []MailboxUpdate
+	Version int
+	Enabled bool
+	Privacy bool
+	// CalendarReminders nil keeps the stored value (older clients omit it).
+	CalendarReminders *bool
+	Quiet             *QuietHours
+	Mailboxes         []MailboxUpdate
 }
 
 func validate(u *SettingsUpdate) error {
@@ -211,8 +215,8 @@ func (s *Store) SaveSettings(ctx context.Context, userID string, u SettingsUpdat
 	}
 	if _, err := tx.Exec(ctx, `UPDATE notification_settings
 		SET enabled = $2, privacy = $3, quiet_start = $4::time, quiet_end = $5::time, timezone = $6,
-		    version = version + 1, updated_at = now()
-		WHERE user_id = $1`, userID, u.Enabled, u.Privacy, start, end, tz); err != nil {
+		    calendar_reminders = coalesce($7, calendar_reminders), version = version + 1, updated_at = now()
+		WHERE user_id = $1`, userID, u.Enabled, u.Privacy, start, end, tz, u.CalendarReminders); err != nil {
 		return nil, err
 	}
 	for _, m := range u.Mailboxes {
@@ -234,13 +238,14 @@ func (s *Store) SaveSettings(ctx context.Context, userID string, u SettingsUpdat
 }
 
 func (s *Store) sameAsStored(ctx context.Context, tx pgx.Tx, userID string, u SettingsUpdate) (bool, error) {
-	var enabled, privacy bool
+	var enabled, privacy, reminders bool
 	var start, end, tz *string
-	if err := tx.QueryRow(ctx, `SELECT enabled, privacy, to_char(quiet_start, 'HH24:MI'), to_char(quiet_end, 'HH24:MI'), timezone
-		FROM notification_settings WHERE user_id = $1`, userID).Scan(&enabled, &privacy, &start, &end, &tz); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT enabled, privacy, calendar_reminders, to_char(quiet_start, 'HH24:MI'), to_char(quiet_end, 'HH24:MI'), timezone
+		FROM notification_settings WHERE user_id = $1`, userID).Scan(&enabled, &privacy, &reminders, &start, &end, &tz); err != nil {
 		return false, err
 	}
-	if enabled != u.Enabled || privacy != u.Privacy || (start == nil) != (u.Quiet == nil) {
+	if enabled != u.Enabled || privacy != u.Privacy || (start == nil) != (u.Quiet == nil) ||
+		(u.CalendarReminders != nil && *u.CalendarReminders != reminders) {
 		return false, nil
 	}
 	if u.Quiet != nil && (*start != u.Quiet.Start || *end != u.Quiet.End || *tz != u.Quiet.Timezone) {

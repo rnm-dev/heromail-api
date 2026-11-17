@@ -15,6 +15,7 @@ import (
 type reminderFixture struct {
 	h          *harness
 	ws, user   string
+	addr       string
 	token      string // the FCM token of the owner's phone
 	fcm        *recordingFCM
 	dispatcher *calendar.Dispatcher
@@ -34,7 +35,7 @@ func newReminderFixture(t *testing.T, name string) *reminderFixture {
 	rec := &recordingFCM{dead: map[string]bool{}}
 	d := calendar.NewDispatcher(h.pool, email.NewService(email.NewStore(h.pool), h.queue, nil).WithDomainGuard(h.domains)).
 		WithPusher(push.NewCalendarReminders(h.pool, rec))
-	return &reminderFixture{h: h, ws: ws, user: user, token: token, fcm: rec, dispatcher: d}
+	return &reminderFixture{h: h, ws: ws, user: user, addr: addr, token: token, fcm: rec, dispatcher: d}
 }
 
 func (f *reminderFixture) save(in calendar.Input, id string) calendar.Event {
@@ -164,6 +165,22 @@ func TestCalendarReminderPushSettingsAndStaleJobs(t *testing.T) {
 		t.Fatalf("job status %s", s)
 	}
 	f.h.pool.Exec(t.Context(), `UPDATE notification_settings SET enabled=true WHERE user_id=$1`, f.user)
+
+	// Reminders off on their own: no push either; omitting the field in a
+	// save keeps it.
+	session := f.h.loginAs(f.addr, androidClient)
+	if r := f.h.do(http.MethodPut, "/me/notification-settings", `{"version":0,"enabled":true,"privacy":true,"calendar_reminders":false}`, session.Token); r.Code != http.StatusOK || !strings.Contains(r.Body.String(), `"calendar_reminders":false`) {
+		t.Fatalf("save: %d %s", r.Code, r.Body)
+	}
+	if r := f.h.do(http.MethodPut, "/me/notification-settings", `{"version":1,"enabled":true,"privacy":true}`, session.Token); r.Code != http.StatusOK || !strings.Contains(r.Body.String(), `"calendar_reminders":false`) {
+		t.Fatalf("save without the flag: %d %s", r.Code, r.Body)
+	}
+	muted := f.save(personalEvent(start, 10), "")
+	f.fire(muted.ID)
+	if sent := f.fcm.take(); len(sent) != 0 {
+		t.Fatalf("muted reminders pushed: %+v", sent)
+	}
+	f.h.pool.Exec(t.Context(), `UPDATE notification_settings SET calendar_reminders=true WHERE user_id=$1`, f.user)
 
 	// More than five minutes after the start is too late.
 	late := f.save(personalEvent(time.Now().UTC().Add(time.Hour).Truncate(time.Minute), 10), "")

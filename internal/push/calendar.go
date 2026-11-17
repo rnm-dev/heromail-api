@@ -19,7 +19,7 @@ import (
 const ReminderChannel = "calendar_reminders"
 
 // CalendarReminders pushes meeting reminders to the calendar owner's devices.
-// The global switch and privacy mode apply; quiet hours do not, the reminder
+// The global switch, calendar_reminders and privacy mode apply; quiet hours do not, the reminder
 // is something the user asked for at that time. A nil sender drops reminders.
 type CalendarReminders struct {
 	devices *Store
@@ -43,7 +43,7 @@ func (c *CalendarReminders) PushReminder(ctx context.Context, r calendar.Reminde
 	if c.sender == nil {
 		return nil
 	}
-	enabled, privacy, err := c.devices.globalSettings(ctx, r.OwnerID)
+	enabled, privacy, err := c.devices.reminderSettings(ctx, r.OwnerID)
 	if err != nil || !enabled {
 		return err
 	}
@@ -72,9 +72,10 @@ func (c *CalendarReminders) PushReminder(ctx context.Context, r calendar.Reminde
 	return nil
 }
 
-// globalSettings reads the switch and privacy mode; no row means defaults.
-func (s *Store) globalSettings(ctx context.Context, userID string) (enabled, privacy bool, err error) {
-	err = s.pool.QueryRow(ctx, `SELECT enabled, privacy FROM notification_settings WHERE user_id = $1`, userID).Scan(&enabled, &privacy)
+// reminderSettings: reminders push when both the global switch and
+// calendar_reminders are on; no row means defaults.
+func (s *Store) reminderSettings(ctx context.Context, userID string) (enabled, privacy bool, err error) {
+	err = s.pool.QueryRow(ctx, `SELECT enabled AND calendar_reminders, privacy FROM notification_settings WHERE user_id = $1`, userID).Scan(&enabled, &privacy)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return true, false, nil
 	}

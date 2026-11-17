@@ -19,7 +19,7 @@ func settingsETag(version int) *string {
 
 func notificationSettingsToAPI(st *push.Settings) NotificationSettings {
 	out := NotificationSettings{Version: st.Version, Enabled: st.Enabled, Privacy: st.Privacy,
-		Mailboxes: make([]MailboxNotificationSettings, 0, len(st.Mailboxes))}
+		CalendarReminders: st.CalendarReminders, Mailboxes: make([]MailboxNotificationSettings, 0, len(st.Mailboxes))}
 	if q := st.Quiet; q != nil {
 		out.QuietHours = &QuietHours{Start: q.Start, End: q.End, Timezone: q.Timezone}
 	}
@@ -64,7 +64,8 @@ func (s *Server) SaveNotificationSettings(ctx context.Context, r SaveNotificatio
 			return conflict, nil
 		}
 	}
-	u := push.SettingsUpdate{Version: r.Body.Version, Enabled: r.Body.Enabled, Privacy: r.Body.Privacy}
+	u := push.SettingsUpdate{Version: r.Body.Version, Enabled: r.Body.Enabled, Privacy: r.Body.Privacy,
+		CalendarReminders: r.Body.CalendarReminders}
 	if q := r.Body.QuietHours; q != nil {
 		u.Quiet = &push.QuietHours{Start: q.Start, End: q.End, Timezone: q.Timezone}
 	}

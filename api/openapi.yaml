@@ -1105,7 +1105,8 @@ paths:
         never configured. A user who has never saved anything gets version 0
         and the defaults:
 
-        * `enabled: true`, `privacy: false`, no `quiet_hours`;
+        * `enabled: true`, `privacy: false`, `calendar_reminders: true`, no
+          `quiet_hours`;
         * per mailbox: `enabled: true`, `categories: [people]`,
           `starred_only: false`.
 
@@ -1114,7 +1115,8 @@ paths:
         badge stays right even for a muted mailbox.
 
         Meeting reminders (`type: calendar_reminder`, see
-        `CalendarReminderPush`) follow `enabled` and `privacy` but ignore
+        `CalendarReminderPush`) need both `enabled` and `calendar_reminders`,
+        follow `privacy`, but ignore
         `quiet_hours` and the per-mailbox switches: the user set the reminder
         for that time.
       security: [{ session: [] }]
@@ -2983,7 +2985,7 @@ components:
 
     NotificationSettings:
       type: object
-      required: [version, enabled, privacy, mailboxes]
+      required: [version, enabled, privacy, calendar_reminders, mailboxes]
       properties:
         version: { type: integer, minimum: 0 }
         enabled:
@@ -2994,6 +2996,10 @@ components:
           type: boolean
           default: false
           description: Hide subject and preview; the notification shows the sender and "Новое письмо".
+        calendar_reminders:
+          type: boolean
+          default: true
+          description: Meeting reminder pushes. They need `enabled` too and ignore quiet hours.
         quiet_hours: { $ref: '#/components/schemas/QuietHours' }
         mailboxes:
           type: array
@@ -3023,6 +3029,9 @@ components:
           description: The version last read.
         enabled: { type: boolean }
         privacy: { type: boolean }
+        calendar_reminders:
+          type: boolean
+          description: Absent keeps the stored value.
         quiet_hours: { $ref: '#/components/schemas/QuietHours' }
         mailboxes:
           type: array
