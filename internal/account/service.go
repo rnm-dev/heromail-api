@@ -53,6 +53,9 @@ type Config struct {
 	AppBaseURL string
 	// MailFrom is the envelope sender for system mail.
 	MailFrom string
+	// LeadsTo receives requests from the landing form. Empty turns the form's
+	// endpoint off (it answers 503 and the page offers the address instead).
+	LeadsTo string
 }
 
 // SystemSigner resolves the DKIM key for the domain our own mail is sent from.

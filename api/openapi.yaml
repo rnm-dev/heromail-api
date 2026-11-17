@@ -32,6 +32,8 @@ tags:
   - name: health
   - name: auth
     description: Human authentication.
+  - name: public
+    description: Open to guests of the public site.
   - name: workspaces
     description: Tenants. Reached with a session, not an API key.
   - name: emails
@@ -803,6 +805,37 @@ paths:
         '202':
           description: Accepted, whether or not anything was sent
         '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /leads:
+    post:
+      tags: [public]
+      operationId: submitLead
+      summary: Ask to connect a company
+      description: |
+        The form on the public landing. Nothing is stored: the request is
+        emailed to the sales address (`LEADS_TO`) with `Reply-To` set to the
+        sender, so answering the email answers the lead.
+
+        A filled `website` field marks a bot — the form hides it from people —
+        and is answered 202 without sending anything. When the mail cannot be
+        handed over the answer is 503, so the page can offer the direct
+        address instead of losing the request.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LeadRequest' }
+      responses:
+        '202':
+          description: Accepted
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503':
+          description: The request could not be handed to the mail server
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /auth/reset-password:
     post:
@@ -3132,6 +3165,24 @@ components:
       additionalProperties: false
       properties:
         email: { type: string, format: email }
+
+    LeadRequest:
+      type: object
+      required: [name, email]
+      additionalProperties: false
+      properties:
+        name: { type: string, maxLength: 120 }
+        email: { type: string, format: email }
+        company: { type: string, maxLength: 160 }
+        domain: { type: string, maxLength: 253 }
+        mailboxes:
+          type: string
+          enum: ['1-10', '11-50', '51-200', '200+']
+          description: Roughly how many mailboxes the company needs.
+        message: { type: string, maxLength: 2000 }
+        website:
+          type: string
+          description: Honeypot. People never see it; a non-empty value is a bot.
 
     ResetPasswordRequest:
       type: object

@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/rnm/heromail/backend/internal/account"
 	"github.com/rnm/heromail/backend/internal/auth"
@@ -46,6 +47,7 @@ func main() {
 	accounts := account.NewService(account.NewStore(pool), sender, account.Config{
 		AppBaseURL: os.Getenv("APP_BASE_URL"),
 		MailFrom:   os.Getenv("MAIL_FROM"),
+		LeadsTo:    leadsTo(),
 	})
 	redisAddr := os.Getenv("REDIS_ADDR")
 	if redisAddr == "" {
@@ -137,4 +139,13 @@ func main() {
 
 	log.Printf("listening on :%s", port)
 	log.Fatal(http.ListenAndServe(":"+port, handler))
+}
+
+// leadsTo is where the landing form's requests are emailed. The RNM office
+// takes them unless LEADS_TO names another address.
+func leadsTo() string {
+	if to := strings.TrimSpace(os.Getenv("LEADS_TO")); to != "" {
+		return to
+	}
+	return "office@rnm.dev"
 }

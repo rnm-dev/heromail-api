@@ -39,6 +39,11 @@ var (
 	verifyAttemptPerEmail = ratelimit.Rule{Name: "verify-attempt:email", Limit: 30, Window: time.Hour}
 
 	registerPerIP = ratelimit.Rule{Name: "register:ip", Limit: 10, Window: time.Hour}
+
+	// The landing form emails the sales inbox. Per source address for scripts,
+	// and one cap per inbox so rotating addresses cannot flood it either.
+	leadPerIP = ratelimit.Rule{Name: "lead:ip", Limit: 5, Window: time.Hour}
+	leadTotal = ratelimit.Rule{Name: "lead:inbox", Limit: 60, Window: time.Hour}
 )
 
 // sendQuota is the per-workspace send limit, in messages. Both windows apply:
