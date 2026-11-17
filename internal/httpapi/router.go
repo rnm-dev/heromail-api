@@ -100,6 +100,10 @@ func Router(server *Server, apiKeys *auth.Authenticator, accounts *account.Servi
 			accounts.RequireSession(http.HandlerFunc(server.calendarMeet)).ServeHTTP(w, r)
 		case calendarBusyPath.MatchString(path):
 			accounts.RequireSession(http.HandlerFunc(server.calendarBusy)).ServeHTTP(w, r)
+		case userSignaturePath.MatchString(path):
+			accounts.RequireSession(http.HandlerFunc(server.userSignatures)).ServeHTTP(w, r)
+		case signatureDefaultsPath.MatchString(path):
+			accounts.RequireSession(http.HandlerFunc(server.signatureDefaults)).ServeHTTP(w, r)
 		case calendarFeedSettingsPath.MatchString(path):
 			accounts.RequireSession(http.HandlerFunc(server.calendarFeedSettings)).ServeHTTP(w, r)
 		case path == "/.well-known/oauth-protected-resource", path == "/.well-known/oauth-protected-resource/mcp":

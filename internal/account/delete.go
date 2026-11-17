@@ -118,6 +118,8 @@ func (s *Service) DeleteAccount(ctx context.Context, userID, password string) (*
 		`DELETE FROM contacts WHERE user_id = $1`,
 		`DELETE FROM mail_drafts WHERE user_id = $1`,
 		`DELETE FROM mail_signatures WHERE user_id = $1`,
+		`DELETE FROM signature_defaults WHERE user_id = $1`,
+		`DELETE FROM user_signatures WHERE user_id = $1`,
 		`DELETE FROM notification_settings WHERE user_id = $1`,
 		`DELETE FROM mailbox_members WHERE user_id = $1`,
 		// Unsent uploads keep pointing at the anonymised row, so nobody else
