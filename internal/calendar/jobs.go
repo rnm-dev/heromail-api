@@ -44,10 +44,10 @@ func (d *Dispatcher) WithPusher(p ReminderPusher) *Dispatcher { d.pusher = p; re
 // Reminder is one push reminder about an occurrence, addressed to the owner of
 // the calendar. StartAt is set for timed events, StartDate for all-day ones.
 type Reminder struct {
-	EventID, WorkspaceID, OwnerID string
-	Title, Location               string
-	StartAt                       *time.Time
-	StartDate                     string
+	EventID, Workspace, OwnerID string // Workspace is the slug
+	Title, Location             string
+	StartAt                     *time.Time // nil for all-day events
+	Day                         string     // YYYY-MM-DD in the event's time zone
 }
 
 // ReminderPusher delivers a Reminder (push.CalendarReminders). An error means
@@ -302,10 +302,13 @@ func (d *Dispatcher) remind(ctx context.Context, tx pgx.Tx, j job, series Event,
 			}
 		}
 		if d.pusher != nil {
-			r := Reminder{EventID: e.ID, WorkspaceID: ws, OwnerID: owner, Title: e.Title, Location: e.Location}
-			if e.AllDay {
-				r.StartDate = e.Start
-			} else {
+			var slug string
+			if err := tx.QueryRow(ctx, `SELECT slug FROM workspaces WHERE id=$1`, ws).Scan(&slug); err != nil {
+				return err
+			}
+			r := Reminder{EventID: e.ID, Workspace: slug, OwnerID: owner, Title: e.Title, Location: e.Location,
+				Day: occurrenceStart(e).Format("2006-01-02")}
+			if !e.AllDay {
 				r.StartAt = e.StartAt
 			}
 			if err := d.pusher.PushReminder(ctx, r); err != nil {
@@ -329,12 +332,12 @@ func (d *Dispatcher) remind(ctx context.Context, tx pgx.Tx, j job, series Event,
 // occurrenceStart is when the occurrence begins; for all-day events the 09:00
 // their reminders count from, so a morning reminder is not already late.
 func occurrenceStart(e Event) time.Time {
-	if !e.AllDay && e.StartAt != nil {
-		return *e.StartAt
-	}
 	loc, err := Zone(e.Timezone)
 	if err != nil {
 		loc = time.UTC
+	}
+	if !e.AllDay && e.StartAt != nil {
+		return e.StartAt.In(loc)
 	}
 	t, _ := time.ParseInLocation("2006-01-02", e.Start, loc)
 	return t.Add(9 * time.Hour)

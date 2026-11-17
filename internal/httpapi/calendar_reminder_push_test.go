@@ -91,8 +91,7 @@ func TestCalendarReminderPushForPersonalEvent(t *testing.T) {
 		t.Fatalf("pushes %+v", sent)
 	}
 	m := sent[0]
-	want := map[string]string{"type": "calendar_reminder", "event_id": e.ID, "workspace_id": f.ws,
-		"start_at": start.Format(time.RFC3339), "title": "Standup", "location": "https://meet.google.com/abc-defg-hij"}
+	want := map[string]string{"type": "calendar_reminder", "event_id": e.ID, "workspace": f.h.slugFor(f.ws), "day": start.Format("2006-01-02")}
 	if len(m.Data) != len(want) {
 		t.Fatalf("data %v, want %v", m.Data, want)
 	}
@@ -107,7 +106,7 @@ func TestCalendarReminderPushForPersonalEvent(t *testing.T) {
 	if m.Android.Notification.ChannelID != push.ReminderChannel {
 		t.Fatalf("android %+v", m.Android)
 	}
-	if aps := m.APNS.Payload["aps"].(map[string]any); aps["interruption-level"] != "time-sensitive" {
+	if aps := m.APNS.Payload["aps"].(map[string]any); aps["interruption-level"] != nil {
 		t.Fatalf("apns %+v", m.APNS)
 	}
 	if s := f.reminderStatus(e.ID, e.Version); s != "queued" {
@@ -121,11 +120,11 @@ func TestCalendarReminderPushSettingsAndStaleJobs(t *testing.T) {
 
 	// A moved event drops the old reminder; a cancelled one drops all.
 	e := f.save(personalEvent(start, 10), "")
-	moved := personalEvent(start.Add(time.Hour), 10)
+	moved := personalEvent(start.Add(24*time.Hour), 10)
 	moved.Version = e.Version
 	f.save(moved, e.ID)
 	f.fire(e.ID)
-	if sent := f.fcm.take(); len(sent) != 1 || sent[0].Data["start_at"] != start.Add(time.Hour).Format(time.RFC3339) {
+	if sent := f.fcm.take(); len(sent) != 1 || sent[0].Data["day"] != start.Add(24*time.Hour).Format("2006-01-02") {
 		t.Fatalf("after move: %+v", sent)
 	}
 	if s := f.reminderStatus(e.ID, e.Version); s != "skipped" {
@@ -150,8 +149,7 @@ func TestCalendarReminderPushSettingsAndStaleJobs(t *testing.T) {
 	if len(sent) != 1 {
 		t.Fatalf("private pushes %d", len(sent))
 	}
-	if sent[0].Data["title"] != "" || sent[0].Data["location"] != "" ||
-		!strings.HasPrefix(sent[0].Notification.Title, "Встреча через ") || sent[0].Notification.Body != "Напоминание о встрече" {
+	if n := sent[0].Notification; n.Title != "Встреча" || !strings.HasPrefix(n.Body, "через ") || strings.Contains(n.Body, "meet") || len(sent[0].Data) != 4 {
 		t.Fatalf("private push %+v", sent[0])
 	}
 

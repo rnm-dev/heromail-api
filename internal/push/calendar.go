@@ -81,44 +81,34 @@ func (s *Store) globalSettings(ctx context.Context, userID string) (enabled, pri
 	return enabled, privacy, err
 }
 
-// ReminderPush is the visible reminder. Privacy mode keeps the title and
-// location out of both the notification and data.
+// ReminderPush is the visible reminder. data carries only what the app
+// routes with (MAL-38): it opens /calendar/event/<workspace>/<event_id>?day=.
+// Privacy mode titles it "Встреча" and leaves the place out.
 func ReminderPush(token string, r calendar.Reminder, now time.Time, privacy bool) fcm.Message {
-	when := "сегодня, весь день"
-	data := map[string]string{"type": "calendar_reminder", "event_id": r.EventID, "workspace_id": r.WorkspaceID}
+	body := "сегодня, весь день"
 	if r.StartAt != nil {
-		when = inMinutes(r.StartAt.Sub(now))
-		data["start_at"] = r.StartAt.UTC().Format(time.RFC3339)
-	} else {
-		data["start_date"] = r.StartDate
+		body = inMinutes(r.StartAt.Sub(now))
 	}
-	title, body := strings.TrimSpace(r.Title), when
-	if title == "" {
+	title := strings.TrimSpace(r.Title)
+	if title == "" || privacy {
 		title = "Встреча"
 	}
-	if privacy {
-		title, body = "Встреча "+when, "Напоминание о встрече"
-	} else {
-		data["title"] = r.Title
-		if r.Location != "" {
-			data["location"] = r.Location
-			body += " · " + r.Location
-		}
+	if !privacy && r.Location != "" {
+		body += " · " + r.Location
 	}
 	tag := "reminder-" + r.EventID
 	return fcm.Message{
 		Token:        token,
 		Notification: &fcm.Notification{Title: title, Body: body},
-		Data:         data,
+		Data:         map[string]string{"type": "calendar_reminder", "workspace": r.Workspace, "event_id": r.EventID, "day": r.Day},
 		Android: &fcm.AndroidConfig{
 			Priority:     "high",
 			Notification: &fcm.AndroidNotification{ChannelID: ReminderChannel, Tag: tag},
 		},
+		// No time-sensitive interruption level: the app lacks the entitlement.
 		APNS: &fcm.APNSConfig{
 			Headers: map[string]string{"apns-collapse-id": tag, "apns-push-type": "alert", "apns-priority": "10"},
-			Payload: map[string]any{"aps": map[string]any{
-				"interruption-level": "time-sensitive", "sound": "default", "thread-id": "calendar",
-			}},
+			Payload: map[string]any{"aps": map[string]any{"sound": "default", "thread-id": "calendar"}},
 		},
 	}
 }

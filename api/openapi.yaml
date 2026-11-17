@@ -2931,26 +2931,23 @@ components:
       description: |
         FCM `data` of a meeting reminder, sent to every active device of the
         calendar owner at the reminder time. Not an HTTP response; described
-        here as the contract for the mobile app. All values are strings.
+        here as the contract for the mobile app (MAL-38). All values are strings.
+        The app opens `/calendar/event/<workspace>/<event_id>?day=<day>`.
 
         The visible part: title is the meeting title, body is
         `через 10 мин · <location>` (`сегодня, весь день` for all-day events).
-        In privacy mode the title is `Встреча через N мин`, the body
-        `Напоминание о встрече`, and `title`/`location` are left out of data.
-        Android channel id `calendar_reminders`, tag `reminder-<event_id>`;
-        iOS `interruption-level: time-sensitive`, `apns-collapse-id`
-        `reminder-<event_id>`. Quiet hours do not apply. A reminder that
+        In privacy mode the title is `Встреча` and the place is left out.
+        Android channel id `calendar_reminders`, priority high, tag
+        `reminder-<event_id>`; iOS `apns-collapse-id` `reminder-<event_id>`,
+        no time-sensitive level. Quiet hours do not apply. A reminder that
         cannot be delivered more than 5 minutes after the start is dropped;
         a moved or cancelled event never sends the old one.
-      required: [type, event_id, workspace_id]
+      required: [type, workspace, event_id, day]
       properties:
         type: { type: string, enum: [calendar_reminder] }
+        workspace: { type: string, description: Workspace slug, as in new-mail pushes }
         event_id: { type: string, format: uuid }
-        workspace_id: { type: string, format: uuid }
-        start_at: { type: string, format: date-time, description: UTC start of the occurrence; timed events only }
-        start_date: { type: string, format: date, description: Day of the occurrence; all-day events only }
-        title: { type: string, description: Absent in privacy mode }
-        location: { type: string, description: Place or meeting link (e.g. Google Meet); absent when empty or in privacy mode }
+        day: { type: string, format: date, description: Day of the reminded occurrence in the event time zone }
 
     QuietHours:
       type: object
